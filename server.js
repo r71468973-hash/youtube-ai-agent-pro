@@ -134,7 +134,7 @@ function validateSettings(b) {
     out.ttsProvider = b.ttsProvider;
   }
   if (b.imageMode !== undefined) {
-    if (!['gradient', 'ai'].includes(b.imageMode)) throw Object.assign(new Error('Invalid image mode'), { code: 400 });
+    if (!['gradient', 'ai', 'cartoon'].includes(b.imageMode)) throw Object.assign(new Error('Invalid image mode'), { code: 400 });
     out.imageMode = b.imageMode;
   }
   for (const k of ['elevenVoiceFemale', 'elevenVoiceMale']) {
@@ -239,7 +239,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, {
       formats: FORMATS, music: MUSIC_BUILTIN.concat(store.listMusic().map((m) => ({ id: `upload:${m.id}`, name: `${m.name} (uploaded)` }))),
       tts: tts || null,
-      ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },
+      ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: ['ai', 'cartoon'].includes(store.getSettings().imageMode) && vault.has('OPENAI_API_KEY') },
       storage: { configured: storage.isConfigured() },
       youtube: youtube.status(),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },
