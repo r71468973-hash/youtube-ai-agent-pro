@@ -116,8 +116,9 @@
     const ov = state.overview;
     const f = (state.form = state.form || { title: '', story: '', language: 'en', format: 'shorts', voiceGender: 'female', captions: true, music: 'ambient-calm' });
     const notes = [];
-    if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, 'No text-to-speech key is set. Videos will have captions and music but no spoken voice. Add an OpenAI, ElevenLabs or Google key in Settings.'));
-    if (!ov.ai.scenes) notes.push(h('p', { class: 'notice' }, 'Tip: add an Anthropic key in Settings for smarter scene planning. Without it the story is split by sentences.'));
+    if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, 'No text-to-speech key is set. Videos will have captions and music but no spoken voice. Add a Gemini, OpenAI or ElevenLabs key in Settings.'));
+    if (!ov.ai.scenes) notes.push(h('p', { class: 'notice' }, 'Tip: add a Gemini or Anthropic key in Settings for AI scene planning. Without it the story is split by sentences.'));
+    if (!ov.ai.images) notes.push(h('p', { class: 'notice' }, 'No AI scene images: add a Gemini key (or OpenAI) in Settings for 3D cartoon scenes. Otherwise videos use animated gradients.'));
     const story = h('textarea', { id: 'story', placeholder: f.language === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…', oninput: (e) => { f.story = e.target.value; counter.textContent = `${f.story.length} / ${ov.limits.storyMax}`; } });
     story.value = f.story;
     const counter = h('span', { class: 'muted small' }, `${f.story.length} / ${ov.limits.storyMax}`);
@@ -149,7 +150,8 @@
     const side = h('div', { class: 'stack' },
       h('div', { class: 'card stack' }, h('h3', {}, 'Status'),
         statusLine('Voiceover', ov.tts ? `On (${ov.tts})` : 'Not configured', !!ov.tts),
-        statusLine('Scene planning', ov.ai.scenes ? 'AI' : 'Simple splitting', ov.ai.scenes),
+        statusLine('Scene planning', ov.ai.scenes ? `AI (${ov.ai.planner})` : 'Simple splitting', ov.ai.scenes),
+        statusLine('3D cartoon scenes', ov.ai.images ? 'AI images' : 'Gradients only', ov.ai.images),
         statusLine('Cloud storage', ov.storage.configured ? 'Connected' : 'Local only', ov.storage.configured),
         statusLine('YouTube', ov.youtube.connected ? (ov.youtube.channel ? ov.youtube.channel.title : 'Connected') : 'Not connected', ov.youtube.connected)),
       h('div', { class: 'card stack' }, h('h3', {}, 'How it works'),
@@ -189,7 +191,8 @@
         yt.connected ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (!confirm('Disconnect YouTube? Stored tokens will be deleted and revoked.')) return; await api('POST', '/api/youtube/disconnect'); await loadAll(); render(); } }, 'Disconnect') : null));
 
     const LABELS = {
-      ANTHROPIC_API_KEY: ['Anthropic', 'Smarter scene planning'], OPENAI_API_KEY: ['OpenAI', 'Voiceover (TTS) and optional AI images'],
+      GEMINI_API_KEY: ['Google Gemini', 'Story and scene planning, 3D cartoon images, voiceover'],
+      ANTHROPIC_API_KEY: ['Anthropic', 'Alternative scene planning'], OPENAI_API_KEY: ['OpenAI', 'Voiceover (TTS) and AI images'],
       ELEVENLABS_API_KEY: ['ElevenLabs', 'Voiceover (TTS)'], GOOGLE_TTS_API_KEY: ['Google Cloud TTS', 'Voiceover (TTS)'],
       YOUTUBE_CLIENT_ID: ['Google OAuth client ID', 'For YouTube'], YOUTUBE_CLIENT_SECRET: ['Google OAuth client secret', 'For YouTube'],
       S3_ACCESS_KEY_ID: ['Storage access key ID', 'Cloud storage'], S3_SECRET_ACCESS_KEY: ['Storage secret access key', 'Cloud storage'],
@@ -205,7 +208,12 @@
             k.source === 'vault' ? h('button', { class: 'btn small danger', type: 'button', onclick: async () => { if (!confirm(`Remove ${LABELS[k.name][0]}?`)) return; const r = await api('DELETE', `/api/keys/${k.name}`); state.keys = r.keys; await loadAll(); render(); } }, 'Remove') : null));
       })));
 
+    const gemOut = h('span', { class: 'small muted' });
+    keysCard.append(h('div', { class: 'row' },
+      h('button', { class: 'btn small', type: 'button', onclick: async () => { gemOut.textContent = 'Testing…'; try { const r = await api('POST', '/api/gemini/test'); gemOut.textContent = r.ok ? 'Gemini key works.' : `Failed: ${r.error}`; } catch (e) { gemOut.textContent = e.message; } } }, 'Test Gemini key'), gemOut));
+
     const f = { endpoint: stg.endpoint, region: stg.region, bucket: stg.bucket, prefix: stg.prefix, pathStyle: stg.pathStyle };
+    const stOut = h('p', { class: 'notice', hidden: false }, 'Not tested yet.');
     const storageCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', { storage: f }); state.settings = r.settings; await loadAll(); toast('Storage settings saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('div', {}, h('h3', {}, 'Cloud storage'), h('p', { class: 'small muted' }, 'Any S3-compatible service (Cloudflare R2, AWS S3, Backblaze B2, Supabase…). Add the access key ID and secret above.')),
       h('label', {}, 'Endpoint', h('input', { type: 'url', placeholder: 'https://<account>.r2.cloudflarestorage.com', value: f.endpoint, oninput: (e) => { f.endpoint = e.target.value; } })),
@@ -214,13 +222,19 @@
         h('label', {}, 'Region', h('input', { type: 'text', value: f.region, oninput: (e) => { f.region = e.target.value; } }))),
       h('label', {}, 'Folder prefix', h('input', { type: 'text', value: f.prefix, oninput: (e) => { f.prefix = e.target.value; } })),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: f.pathStyle, onchange: (e) => { f.pathStyle = e.target.checked; } }), 'Path-style URLs (leave on for R2, MinIO, B2)'),
-      h('button', { class: 'btn primary', type: 'submit' }, 'Save storage settings'));
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', type: 'submit' }, 'Save storage settings'),
+        h('button', { class: 'btn', type: 'button', onclick: async () => { stOut.textContent = 'Testing…'; stOut.className = 'notice'; try { const r = await api('POST', '/api/storage/test'); stOut.textContent = r.ok ? 'Connection works: wrote, read back and deleted a test file.' : `Failed${r.steps.length ? ' at ' + r.steps[r.steps.length - 1].step : ''}: ${r.error}`; stOut.className = `notice ${r.ok ? 'ok' : 'err'}`; } catch (e) { stOut.textContent = e.message; stOut.className = 'notice err'; } } }, 'Save first, then test connection')),
+      stOut,
+      h('p', { class: 'small muted' }, 'Saved: generated videos, voiceover audio, scene images and thumbnails. Local disk is always kept as a fallback.'));
 
-    const prefs = { ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia };
+    const prefs = { aiProvider: s.aiProvider, ttsProvider: s.ttsProvider, visualStyle: s.visualStyle, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia };
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
-      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (first key found)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
-      h('label', {}, 'Scene visuals', h('select', { onchange: (e) => { prefs.imageMode = e.target.value; } }, [['gradient', 'Animated gradients (free)'], ['ai', 'AI images (needs OpenAI key, costs per image)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.imageMode }, l)))),
+      h('label', {}, 'Story and scene planning AI', h('select', { onchange: (e) => { prefs.aiProvider = e.target.value; } }, [['auto', 'Automatic (Gemini, then Anthropic)'], ['gemini', 'Google Gemini'], ['anthropic', 'Anthropic Claude']].map(([v, l]) => h('option', { value: v, selected: v === prefs.aiProvider }, l)))),
+      h('label', {}, 'Visual style', h('select', { onchange: (e) => { prefs.visualStyle = e.target.value; } }, [['3d-cartoon', '3D cartoon'], ['cinematic', 'Cinematic illustration']].map(([v, l]) => h('option', { value: v, selected: v === prefs.visualStyle }, l)))),
+      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (falls back if one fails)'], ['gemini', 'Google Gemini'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
+      h('label', {}, 'Scene visuals', h('select', { onchange: (e) => { prefs.imageMode = e.target.value; } }, [['gradient', 'Animated gradients (free)'], ['ai', '3D cartoon AI images (needs Gemini or OpenAI key)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.imageMode }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('button', { class: 'btn primary', type: 'submit' }, 'Save'));
 
