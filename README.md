@@ -65,3 +65,10 @@ lib/             vault, auth, store, providers, render, pipeline, storage, youtu
 public/          dashboard (index.html, styles.css, app.js)
 test/smoke.js    end-to-end test
 ```
+
+## Gemini, 3D cartoon scenes and cloud assets
+
+- Add `GEMINI_API_KEY` in Settings (or as an env var). Gemini is used for story/scene planning (`gemini-2.5-flash`), 3D cartoon scene images (`gemini-2.5-flash-image`) and voiceover (`gemini-2.5-flash-preview-tts`). Override with `GEMINI_MODEL`, `GEMINI_IMAGE_MODEL`, `GEMINI_TTS_MODEL`. Anthropic remains an alternative (Settings, "Story and scene planning AI").
+- Voiceover providers are tried in turn; one with no credits or a rate limit no longer fails the video.
+- Cloud storage (any S3-compatible service, including Railway Buckets) receives video, thumbnail, voiceover audio and scene images. Use "Test connection" in Settings. Local disk is always kept.
+- Scenes are AI-generated images animated with camera moves, not generated video clips.

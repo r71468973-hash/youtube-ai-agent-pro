@@ -126,12 +126,20 @@ function validateCreate(b) {
   };
 }
 
-const TTS_SETTINGS = ['auto', 'openai', 'elevenlabs', 'google', 'none'];
+const TTS_SETTINGS = ['auto', 'gemini', 'openai', 'elevenlabs', 'google', 'none'];
 function validateSettings(b) {
   const out = {};
   if (b.ttsProvider !== undefined) {
     if (!TTS_SETTINGS.includes(b.ttsProvider)) throw Object.assign(new Error('Invalid TTS provider'), { code: 400 });
     out.ttsProvider = b.ttsProvider;
+  }
+  if (b.aiProvider !== undefined) {
+    if (!['auto', 'gemini', 'anthropic'].includes(b.aiProvider)) throw Object.assign(new Error('Invalid AI provider'), { code: 400 });
+    out.aiProvider = b.aiProvider;
+  }
+  if (b.visualStyle !== undefined) {
+    if (!['3d-cartoon', 'cinematic'].includes(b.visualStyle)) throw Object.assign(new Error('Invalid visual style'), { code: 400 });
+    out.visualStyle = b.visualStyle;
   }
   if (b.imageMode !== undefined) {
     if (!['gradient', 'ai'].includes(b.imageMode)) throw Object.assign(new Error('Invalid image mode'), { code: 400 });
@@ -239,7 +247,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, {
       formats: FORMATS, music: MUSIC_BUILTIN.concat(store.listMusic().map((m) => ({ id: `upload:${m.id}`, name: `${m.name} (uploaded)` }))),
       tts: tts || null,
-      ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },
+      ai: { scenes: providers.plannerOrder().length > 0, planner: providers.plannerOrder()[0] || null, gemini: vault.has('GEMINI_API_KEY'), anthropic: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && !!providers.imageProvider() },
       storage: { configured: storage.isConfigured() },
       youtube: youtube.status(),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },
@@ -266,6 +274,13 @@ async function handleApi(req, res, url) {
   if (method === 'PUT' && p === '/api/settings') {
     const patch = validateSettings(await readJson(req));
     return json(res, 200, { settings: store.setSettings(patch) });
+  }
+
+  if (method === 'POST' && p === '/api/storage/test') return json(res, 200, await storage.testConnection());
+  if (method === 'POST' && p === '/api/gemini/test') {
+    if (!vault.has('GEMINI_API_KEY')) return json(res, 200, { ok: false, error: 'No Gemini API key saved.' });
+    try { return json(res, 200, { ok: true, reply: await providers.testGemini() }); }
+    catch (e) { return json(res, 200, { ok: false, error: scrub(e.message) }); }
   }
 
   /* YouTube */
