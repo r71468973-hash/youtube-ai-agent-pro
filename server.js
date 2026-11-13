@@ -10,6 +10,7 @@ const storage = require('./lib/storage');
 const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
 const providers = require('./lib/providers');
+const stories = require('./lib/stories');
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
 ensureDir(DATA_DIR);
@@ -107,6 +108,13 @@ function cleanText(s, max) {
 }
 
 function validateCreate(b) {
+  let template = null;
+  if (b.template) {
+    const tpl = stories.get(String(b.template));
+    if (!tpl) throw Object.assign(new Error('Unknown story template.'), { code: 400 });
+    template = tpl.id;
+    b = { ...b, story: stories.storyText(tpl.id), language: tpl.language, title: b.title || tpl.title, voiceGender: b.voiceGender || 'male' };
+  }
   const story = cleanText(b.story, LIMITS.storyMax);
   if (story.length < LIMITS.storyMin) throw Object.assign(new Error(`Story must be at least ${LIMITS.storyMin} characters.`), { code: 400 });
   if (!['hi', 'en'].includes(b.language)) throw Object.assign(new Error('Language must be "hi" or "en".'), { code: 400 });
@@ -123,10 +131,12 @@ function validateCreate(b) {
     voiceGender: b.voiceGender === 'male' ? 'male' : 'female',
     captions: b.captions !== false,
     music,
+    template,
+    meta: template ? stories.get(template).meta : null,
   };
 }
 
-const TTS_SETTINGS = ['auto', 'openai', 'elevenlabs', 'google', 'none'];
+const TTS_SETTINGS = ['auto', 'piper', 'openai', 'elevenlabs', 'google', 'none'];
 function validateSettings(b) {
   const out = {};
   if (b.ttsProvider !== undefined) {
@@ -185,9 +195,9 @@ async function approveAndUpload(id, meta) {
   try {
     const file = path.join(pipeline.videoDir(id), 'video.mp4');
     if (!fs.existsSync(file)) throw new Error('Video file is no longer on this server. Regenerate it.');
-    const r = await youtube.uploadVideo({ file, title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy, isShort: v.format === 'shorts' });
+    const r = await youtube.uploadVideo({ file, thumb: path.join(pipeline.videoDir(id), 'thumb.jpg'), title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy, isShort: v.format === 'shorts' });
     const done = store.getVideo(id);
-    Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: new Date().toISOString() }, error: null });
+    Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, thumbnail: r.thumbnail, uploadedAt: new Date().toISOString() }, error: null });
     store.saveVideo(done);
   } catch (e) {
     const failed = store.getVideo(id);
@@ -203,6 +213,7 @@ function validateApproval(b) {
   if (!title) throw Object.assign(new Error('A title is required.'), { code: 400 });
   if (/[<>]/.test(title)) throw Object.assign(new Error('Title cannot contain < or >.'), { code: 400 });
   const privacy = ['private', 'unlisted', 'public'].includes(b.privacy) ? b.privacy : 'private';
+  if (privacy === 'public' && b.confirmPublic !== true) throw Object.assign(new Error('Publishing PUBLIC needs a separate confirmation (confirmPublic: true).'), { code: 400 });
   const description = cleanText(b.description, 5000);
   const tags = (Array.isArray(b.tags) ? b.tags : String(b.tags || '').split(','))
     .map((t) => cleanText(t, 30).replace(/[<>]/g, '')).filter(Boolean).slice(0, 15);
@@ -235,8 +246,9 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && p === '/api/logout') { auth.endSession(res); return json(res, 200, { ok: true }); }
 
   if (method === 'GET' && p === '/api/overview') {
-    const tts = providers.pickTtsProvider();
+    const tts = providers.pickTtsProvider('hi');
     return json(res, 200, {
+      piper: providers.piperStatus('hi'), stories: stories.list(),
       formats: FORMATS, music: MUSIC_BUILTIN.concat(store.listMusic().map((m) => ({ id: `upload:${m.id}`, name: `${m.name} (uploaded)` }))),
       tts: tts || null,
       ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },

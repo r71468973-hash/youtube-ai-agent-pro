@@ -116,9 +116,16 @@
     const ov = state.overview;
     const f = (state.form = state.form || { title: '', story: '', language: 'en', format: 'shorts', voiceGender: 'female', captions: true, music: 'ambient-calm' });
     const notes = [];
-    if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, 'No text-to-speech key is set. Videos will have captions and music but no spoken voice. Add an OpenAI, ElevenLabs or Google key in Settings.'));
+    if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, ov.piper && ov.piper.available ? 'Voice engine ready.' : 'No voice engine is available on this server, so videos will have captions and music but no spoken voice. The free Piper engine is not installed here (see the README), or choose a provider in Settings.'));
+    const tpl = (ov.stories || [])[0];
+    const tplCard = tpl ? h('div', { class: 'card stack' },
+      h('h3', {}, 'Ready-made animated story'),
+      h('p', {}, h('strong', {}, tpl.title), ' · Hindi · about 60 seconds'),
+      h('p', { class: 'small muted' }, 'Cartoon scenes with walking, running and expressions, intro and outro, sound effects, music and Hindi captions. Free, no AI credits.'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: () => { Object.assign(f, { template: tpl.id, story: tpl.story, language: 'hi', voiceGender: 'male', title: tpl.title, music: 'ambient-calm', captions: true }); render(); } }, f.template === tpl.id ? 'Selected' : 'Use this story'),
+        f.template ? h('button', { class: 'btn', type: 'button', onclick: () => { Object.assign(f, { template: null, story: '', title: '' }); render(); } }, 'Clear') : null)) : null;
     if (!ov.ai.scenes) notes.push(h('p', { class: 'notice' }, 'Tip: add an Anthropic key in Settings for smarter scene planning. Without it the story is split by sentences.'));
-    const story = h('textarea', { id: 'story', placeholder: f.language === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…', oninput: (e) => { f.story = e.target.value; counter.textContent = `${f.story.length} / ${ov.limits.storyMax}`; } });
+    const story = h('textarea', { id: 'story', placeholder: f.language === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…', oninput: (e) => { f.story = e.target.value; if (f.template) { f.template = null; toast('Story edited: this will be a simple video instead of the animated template.'); } counter.textContent = `${f.story.length} / ${ov.limits.storyMax}`; } });
     story.value = f.story;
     const counter = h('span', { class: 'muted small' }, `${f.story.length} / ${ov.limits.storyMax}`);
     const submit = h('button', { class: 'btn primary', type: 'submit' }, 'Generate video');
@@ -136,7 +143,7 @@
       } catch (ex) { toast(ex.message, 6000); submit.disabled = false; }
     } },
     h('h2', {}, 'New video'),
-    h('label', {}, 'Title (optional)', h('input', { type: 'text', maxlength: 100, value: f.title, oninput: (e) => { f.title = e.target.value; } })),
+    h('label', {}, 'Title (optional)', h('input', { type: 'text', maxlength: 100, value: f.title || '', oninput: (e) => { f.title = e.target.value; } })),
     h('label', {}, 'Story', story, counter),
     h('div', { class: 'cols2' },
       h('label', {}, 'Language', seg('language', [['en', 'English'], ['hi', 'हिन्दी']], f.language, (v) => { f.language = v; story.placeholder = v === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…'; })),
@@ -148,7 +155,7 @@
 
     const side = h('div', { class: 'stack' },
       h('div', { class: 'card stack' }, h('h3', {}, 'Status'),
-        statusLine('Voiceover', ov.tts ? `On (${ov.tts})` : 'Not configured', !!ov.tts),
+        statusLine('Voiceover', ov.tts ? `On (${ov.tts})` : (ov.piper && ov.piper.available ? 'Piper ready' : 'No engine installed'), !!ov.tts),
         statusLine('Scene planning', ov.ai.scenes ? 'AI' : 'Simple splitting', ov.ai.scenes),
         statusLine('Cloud storage', ov.storage.configured ? 'Connected' : 'Local only', ov.storage.configured),
         statusLine('YouTube', ov.youtube.connected ? (ov.youtube.channel ? ov.youtube.channel.title : 'Connected') : 'Not connected', ov.youtube.connected)),
@@ -156,7 +163,7 @@
         h('p', { class: 'small muted' }, '1. Write a story, pick language and format.'),
         h('p', { class: 'small muted' }, '2. The studio narrates, captions and renders it.'),
         h('p', { class: 'small muted' }, '3. You watch it, then approve. Nothing is uploaded to YouTube without your approval.')));
-    return h('div', { class: 'stack' }, notes, h('div', { class: 'grid2' }, form, side));
+    return h('div', { class: 'stack' }, notes, tplCard, h('div', { class: 'grid2' }, form, side));
   }
   const statusLine = (k, v, ok) => h('div', { class: 'row' }, h('span', { class: `badge ${ok ? 'ok' : ''}` }, ok ? 'On' : 'Off'), h('span', {}, h('strong', {}, k), ' · ', v));
 
@@ -219,7 +226,7 @@
     const prefs = { ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia };
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
-      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (first key found)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
+      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free Piper only)'], ['piper', 'Piper (free, local)'], ['elevenlabs', 'ElevenLabs (paid)'], ['openai', 'OpenAI (paid)'], ['google', 'Google Cloud TTS (paid)'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
       h('label', {}, 'Scene visuals', h('select', { onchange: (e) => { prefs.imageMode = e.target.value; } }, [['gradient', 'Animated gradients (free)'], ['ai', 'AI images (needs OpenAI key, costs per image)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.imageMode }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('button', { class: 'btn primary', type: 'submit' }, 'Save'));
@@ -268,9 +275,10 @@
     body.push(h('div', { class: 'row' }, badge(v.status), h('span', { class: 'small muted' }, `${v.format === 'shorts' ? 'Short 9:16' : 'Long 16:9'} · ${v.language === 'hi' ? 'Hindi' : 'English'} · ${fmtDur(v.duration)} · ${fmtSize(v.size)}`)));
     if (v.error) body.push(h('p', { class: 'notice err' }, v.error));
     for (const w of v.warnings || []) body.push(h('p', { class: 'notice warn' }, w));
+    if (v.visuals) body.push(h('p', { class: 'small muted' }, `Visuals: ${v.visuals}. Voice: ${v.voiceEngine || 'none'}.`));
     if (ACTIVE.includes(v.status)) body.push(h('div', {}, h('div', { class: 'progress' }, h('i', { style: `width:${Math.round((v.progress || 0) * 100)}%` })), h('p', { class: 'small muted', 'data-stage': true }, v.stage || '')));
     if (v.hasFile || v.inCloud) body.push(h('div', { class: v.format === 'shorts' ? 'thumb tall' : '' }, h('video', { class: 'player', controls: true, playsinline: true, preload: 'metadata', src: `/api/videos/${v.id}/file`, poster: `/api/videos/${v.id}/thumb` })));
-    if (v.status === 'published' && v.youtube) body.push(h('p', { class: 'notice ok' }, 'Uploaded as ', v.youtube.privacy, ': ', h('a', { href: v.youtube.url, target: '_blank', rel: 'noopener noreferrer' }, v.youtube.url)));
+    if (v.status === 'published' && v.youtube) body.push(h('p', { class: 'notice ok' }, 'Uploaded as ', v.youtube.privacy.toUpperCase(), v.youtube.thumbnail ? ` (thumbnail: ${v.youtube.thumbnail})` : '', ': ', h('a', { href: v.youtube.url, target: '_blank', rel: 'noopener noreferrer' }, v.youtube.url)));
 
     if (v.status === 'ready') body.push(approvalForm(v, yt));
     const actions = [];
@@ -288,7 +296,8 @@
   }
 
   function approvalForm(v, yt) {
-    const m = { title: v.title, description: '', tags: '', privacy: 'private', ok: false };
+    const meta = v.meta || {};
+    const m = { title: meta.title || v.title, description: meta.description || '', tags: (meta.tags || []).join(', '), privacy: 'private', ok: false };
     const go = h('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Approve and upload to YouTube');
     const ack = h('input', { type: 'checkbox', onchange: (e) => { m.ok = e.target.checked; go.disabled = !m.ok || !yt.connected; } });
     return h('form', { class: 'card stack', onsubmit: async (e) => {
@@ -296,7 +305,8 @@
       if (!m.ok) return;
       go.disabled = true;
       try {
-        await api('POST', `/api/videos/${v.id}/approve`, { confirm: true, title: m.title, description: m.description, tags: m.tags, privacy: m.privacy });
+        if (m.privacy === 'public' && !confirm('Publish this video PUBLICLY on YouTube? Anyone will be able to watch it.')) { go.disabled = false; return; }
+        await api('POST', `/api/videos/${v.id}/approve`, { confirm: true, confirmPublic: m.privacy === 'public', title: m.title, description: m.description, tags: m.tags, privacy: m.privacy });
         toast('Approved. Uploading to YouTube…');
         await refreshVideos();
         await drawModal();
@@ -305,8 +315,8 @@
     h('h3', {}, 'Review and approve'),
     !yt.connected ? h('p', { class: 'notice warn' }, 'Connect YouTube in Settings before you can upload.') : h('p', { class: 'small muted' }, `Channel: ${yt.channel ? yt.channel.title : 'connected'}. Nothing is uploaded until you tick the box and approve.`),
     h('label', {}, 'YouTube title', h('input', { type: 'text', maxlength: 100, value: m.title, required: true, oninput: (e) => { m.title = e.target.value; } })),
-    h('label', {}, 'Description', h('textarea', { style: 'min-height:90px', oninput: (e) => { m.description = e.target.value; } })),
-    h('label', {}, 'Tags (comma separated)', h('input', { type: 'text', oninput: (e) => { m.tags = e.target.value; } })),
+    h('label', {}, 'Description', h('textarea', { style: 'min-height:90px', value: m.description, oninput: (e) => { m.description = e.target.value; } })),
+    h('label', {}, 'Tags (comma separated)', h('input', { type: 'text', value: m.tags, oninput: (e) => { m.tags = e.target.value; } })),
     h('label', {}, 'Visibility', h('select', { onchange: (e) => { m.privacy = e.target.value; } }, [['private', 'Private (recommended for first upload)'], ['unlisted', 'Unlisted'], ['public', 'Public']].map(([val, l]) => h('option', { value: val }, l)))),
     h('label', { class: 'check' }, ack, 'I have watched this video and approve uploading it.'),
     h('div', { class: 'row' }, go, h('button', { class: 'btn', type: 'button', onclick: async () => { try { await api('POST', `/api/videos/${v.id}/reject`); await refreshVideos(); await drawModal(); } catch (e) { toast(e.message, 6000); } } }, 'Reject')));

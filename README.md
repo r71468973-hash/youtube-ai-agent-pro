@@ -65,3 +65,21 @@ lib/             vault, auth, store, providers, render, pipeline, storage, youtu
 public/          dashboard (index.html, styles.css, app.js)
 test/smoke.js    end-to-end test
 ```
+
+### Animated Hindi story: "गरीब लड़के का बड़ा सपना"
+
+On the **Create** page press **Use this story** to load the built-in ~60 second Hindi motivational story (written for this project, 10 scenes: intro card, 8 story scenes, moral card).
+
+What is actually generated, and how (all free, all local, no credits):
+
+| Part | Engine | Honest limits |
+|---|---|---|
+| Animation | `lib/animate.py`, a procedural 2.5D cartoon renderer (OpenCV + ffmpeg) | **Not AI-generated and not true 3D.** Shaded cartoon characters with walk/run cycles, blinking, brows, emotions, lip-sync from the voice, parallax backgrounds and camera moves |
+| Hindi voice | [Piper](https://github.com/OHF-Voice/piper1-gpl) with the `hi_IN-pratham-medium` male voice, installed by the Dockerfile | Natural but calm; Piper has **no emotion control**. The model download URL could not be verified from the build workspace; if it fails, the build still succeeds and the dashboard reports the voice as missing |
+| Editing | ffmpeg: Hindi captions, ducked music, synthesised sound effects, dip-to-black transitions, intro/outro cards | Transitions are dips, not crossfades |
+
+Voice selection is **free-first**: "Automatic" only ever uses Piper. ElevenLabs, OpenAI and Google TTS are used only if you choose them in Settings. If Piper is not installed the video is still produced, with captions and music but **no spoken voice**, and the dashboard says so.
+
+Uploads: after you review the video, **Approve** uploads it as **PRIVATE** by default (title, description, tags and thumbnail prefilled). Choosing PUBLIC needs a second confirmation. To make an uploaded video public later, change its visibility in YouTube Studio (the app's YouTube permission is upload-only on purpose).
+
+Railway notes: set `BASE_URL` to your public https URL, set a fixed `APP_SECRET`, and attach a **volume** at `/app/data`, otherwise stored keys and the YouTube connection are lost on every redeploy. If the volume is not writable, set `RAILWAY_RUN_UID=0`.

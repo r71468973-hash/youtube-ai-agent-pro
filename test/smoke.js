@@ -28,7 +28,7 @@ async function call(method, p, body, extra = {}) {
 }
 const probe = (f) => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', f]).toString()).streams;
 
-async function waitFor(id, ms = 240000) {
+async function waitFor(id, ms = 420000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     const v = (await call('GET', `/api/videos/${id}`)).data.video;
@@ -93,7 +93,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const vs = sa.find((s) => s.codec_type === 'video');
     assert.strictEqual(`${vs.width}x${vs.height}`, '1080x1920'); ok('Short is 1080x1920 (9:16)');
     assert(sa.some((s) => s.codec_type === 'audio')); ok('audio track present (music bed)');
-    assert(va.warnings.some((w) => /text-to-speech/.test(w))); ok('missing TTS key reported honestly');
+    assert(va.warnings.some((w) => /voice engine/.test(w))); ok('missing TTS key reported honestly');
     assert(fs.existsSync(path.join(DATA, 'videos', va.id, 'thumb.jpg'))); ok('thumbnail created');
 
     const vb = await waitFor(b.data.video.id);
@@ -112,6 +112,21 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     assert([400, 409].includes(noConfirm.status)); ok('approval without confirm refused');
     assert.strictEqual((await call('GET', `/api/videos/${va.id}`)).data.video.status, 'ready'); ok('video stays "ready" (never auto-uploaded)');
     assert.strictEqual((await call('POST', '/api/youtube/connect')).status, 400); ok('OAuth connect needs client credentials first');
+
+    // --- animated story template (needs python3 + opencv + numpy + scipy)
+    const { animatorProblem } = require('../lib/render');
+    if (await animatorProblem()) console.log('  skip animated story (animation engine not installed here)');
+    else {
+      const t = await call('POST', '/api/videos', { template: 'rahul', format: 'long' });
+      assert.strictEqual(t.status, 202, JSON.stringify(t.data));
+      const vt = await waitFor(t.data.video.id);
+      assert.strictEqual(vt.status, 'ready', 'template failed: ' + vt.error); ok('animated Hindi story rendered');
+      const st = probe(path.join(DATA, 'videos', vt.id, 'video.mp4')).find((x) => x.codec_type === 'video');
+      assert.strictEqual(`${st.width}x${st.height}`, '1920x1080');
+      assert(vt.duration > 45 && vt.duration < 90, 'duration ' + vt.duration); ok('story is about a minute long');
+      assert(vt.meta && vt.meta.tags.length > 3 && /गरीब/.test(vt.meta.title)); ok('title, description and tags generated');
+      assert(vt.visuals.includes('not AI-generated')); ok('visuals honestly labelled');
+    }
 
     // --- delete
     assert.strictEqual((await call('DELETE', `/api/videos/${vb.id}`)).status, 200);
