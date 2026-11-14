@@ -11,6 +11,7 @@ const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
 const providers = require('./lib/providers');
 const animation = require('./lib/animation');
+const daily = require('./lib/daily');
 const { generateHindiStory } = require('./lib/story');
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
@@ -108,6 +109,14 @@ function cleanText(s, max) {
   return String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, max);
 }
 
+/** Saves a validated video request and queues it. Shared by the dashboard and the daily job. */
+function createJob(input) {
+  const id = newId(6);
+  const v = store.saveVideo({ id, ...input, status: 'queued', progress: 0, stage: 'Queued', createdAt: new Date().toISOString(), warnings: [], error: null, scenes: [] });
+  pipeline.enqueue(id);
+  return v;
+}
+
 function validateCreate(b) {
   let story = cleanText(b.story, LIMITS.storyMax);
   const mode = b.mode === 'animated-3d' ? 'animated-3d' : 'classic';
@@ -147,6 +156,15 @@ function validateSettings(b) {
   if (b.imageMode !== undefined) {
     if (!['gradient', 'ai'].includes(b.imageMode)) throw Object.assign(new Error('Invalid image mode'), { code: 400 });
     out.imageMode = b.imageMode;
+  }
+  if (b.dailyEnabled !== undefined) {
+    if (typeof b.dailyEnabled !== 'boolean') throw Object.assign(new Error('dailyEnabled must be true or false'), { code: 400 });
+    out.dailyEnabled = b.dailyEnabled;
+  }
+  if (b.dailyHour !== undefined) {
+    const h = Number(b.dailyHour);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
+    out.dailyHour = h;
   }
   for (const k of ['elevenVoiceFemale', 'elevenVoiceMale']) {
     if (b[k] !== undefined) {
@@ -328,9 +346,7 @@ async function handleApi(req, res, url) {
     const input = validateCreate(await readJson(req));
     const active = store.listVideos().filter((v) => ['queued', 'generating'].includes(v.status)).length;
     if (active >= 5) return bad(res, 'Too many videos in progress. Wait for one to finish.', 429);
-    const id = newId(6);
-    const v = store.saveVideo({ id, ...input, status: 'queued', progress: 0, stage: 'Queued', createdAt: new Date().toISOString(), warnings: [], error: null, scenes: [] });
-    pipeline.enqueue(id);
+    const v = createJob(input);
     return json(res, 202, { video: publicVideo(v) });
   }
 
@@ -426,6 +442,8 @@ server.listen(PORT, () => {
   const pw = auth.adminPassword();
   if (auth.wasGenerated()) console.log(`No ADMIN_PASSWORD set. Generated one and saved it to ${path.join(DATA_DIR, '.admin_password')}`);
   if (!process.env.ADMIN_PASSWORD) console.log('Set ADMIN_PASSWORD in the environment to choose your own login password.');
+  // Daily job: makes one story video per day (India time) and waits for your approval. Off until enabled in Settings.
+  daily.start((body) => createJob(validateCreate(body)).id);
 });
 
 module.exports = server;
