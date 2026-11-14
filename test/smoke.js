@@ -101,6 +101,30 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const sb = probe(path.join(DATA, 'videos', vb.id, 'video.mp4')).find((s) => s.codec_type === 'video');
     assert.strictEqual(`${sb.width}x${sb.height}`, '1920x1080'); ok('Long video is 1920x1080 (16:9)');
 
+    // --- animated 3D video: real 3D clips, per-line voices, subtitles, music
+    const ovr = (await call("GET", "/api/overview")).data;
+    const st3 = ovr.animation.providers.find((x) => x.id === "local-3d");
+    assert(st3 && typeof st3.ok === "boolean"); ok("animation providers reported with reasons");
+    const storyDlg = "Ravi: Let us run to the park!\nSita [F]: Yes, I will walk with you.\nThe two friends played in the garden and were very happy. Later they walked home in the evening.";
+    const c3 = await call("POST", "/api/videos", { story: storyDlg, language: "en", format: "shorts", mode: "animated-3d", music: "none", captions: true });
+    if (!st3.ok) {
+      assert.strictEqual(c3.status, 409); ok("3D refused honestly when no renderer is available");
+    } else {
+      assert.strictEqual(c3.status, 202);
+      const v3 = await waitFor(c3.data.video.id, 900000);
+      assert.strictEqual(v3.status, "ready", "3D failed: " + v3.error); ok("animated 3D Short generated");
+      assert.strictEqual(v3.mode, "animated-3d"); assert.strictEqual(v3.engine, "local-3d"); ok("video recorded as animated-3d / local-3d");
+      const f3 = path.join(DATA, "videos", v3.id, "video.mp4");
+      const vs3 = probe(f3).find((x) => x.codec_type === "video");
+      assert.strictEqual(vs3.width + "x" + vs3.height, "1080x1920"); ok("3D Short is 1080x1920 (9:16)");
+      const p1 = path.join(DATA, "f1.png"), p2 = path.join(DATA, "f2.png");
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "0.8", "-i", f3, "-frames:v", "1", p1]);
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "3.0", "-i", f3, "-frames:v", "1", p2]);
+      assert(!fs.readFileSync(p1).equals(fs.readFileSync(p2))); ok("frames change over time (animated, not a still image)");
+      assert(v3.warnings.some((w) => /text-to-speech/.test(w))); ok("missing voice reported honestly (no key here)");
+      assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("3D thumbnail created");
+    }
+
     // --- range requests
     const rng = await fetch(`${BASE}/api/videos/${va.id}/file`, { headers: { cookie, range: 'bytes=0-99' } });
     assert.strictEqual(rng.status, 206); ok('video streaming supports Range');

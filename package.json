@@ -4,11 +4,13 @@
   "description": "AI video automation: story to video, Hindi/English voiceover, Shorts and long videos, subtitles, music, approval-gated YouTube upload.",
   "private": true,
   "license": "UNLICENSED",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/smoke.js"
+    "test": "node test/animation.js && node test/smoke.js"
   },
   "dependencies": {}
 }

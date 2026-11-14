@@ -10,6 +10,7 @@ const storage = require('./lib/storage');
 const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
 const providers = require('./lib/providers');
+const animation = require('./lib/animation');
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
 ensureDir(DATA_DIR);
@@ -111,6 +112,11 @@ function validateCreate(b) {
   if (story.length < LIMITS.storyMin) throw Object.assign(new Error(`Story must be at least ${LIMITS.storyMin} characters.`), { code: 400 });
   if (!['hi', 'en'].includes(b.language)) throw Object.assign(new Error('Language must be "hi" or "en".'), { code: 400 });
   if (!FORMATS[b.format]) throw Object.assign(new Error('Format must be "shorts" or "long".'), { code: 400 });
+  const mode = b.mode === 'animated-3d' ? 'animated-3d' : 'classic';
+  if (mode === 'animated-3d') {
+    const st = animation.current();
+    if (!st || !st.ok) throw Object.assign(new Error(`3D animation is not available: ${st ? st.reason : 'unknown provider'}`), { code: 409 });
+  }
   const music = String(b.music || 'none');
   if (music.startsWith('upload:')) {
     if (!store.getMusic(music.slice(7))) throw Object.assign(new Error('Selected music track not found.'), { code: 400 });
@@ -120,6 +126,7 @@ function validateCreate(b) {
     title: cleanText(b.title, 100) || story.split(/[.!?।\n]/)[0].slice(0, 70),
     language: b.language,
     format: b.format,
+    mode,
     voiceGender: b.voiceGender === 'male' ? 'male' : 'female',
     captions: b.captions !== false,
     music,
@@ -142,6 +149,15 @@ function validateSettings(b) {
       if (!/^[A-Za-z0-9]{10,40}$/.test(b[k])) throw Object.assign(new Error('Invalid ElevenLabs voice id'), { code: 400 });
       out[k] = b[k];
     }
+  }
+  if (b.animationProvider !== undefined) {
+    if (!animation.IDS.includes(b.animationProvider)) throw Object.assign(new Error('Invalid animation provider'), { code: 400 });
+    out.animationProvider = b.animationProvider;
+  }
+  if (b.animationEndpoint !== undefined) {
+    const ep = String(b.animationEndpoint).trim();
+    if (ep && !/^https:\/\/[^\s]+$/i.test(ep)) throw Object.assign(new Error('The video API endpoint must start with https://'), { code: 400 });
+    out.animationEndpoint = ep;
   }
   if (b.markSyntheticMedia !== undefined) out.markSyntheticMedia = !!b.markSyntheticMedia;
   if (b.storage) {
@@ -240,6 +256,7 @@ async function handleApi(req, res, url) {
       formats: FORMATS, music: MUSIC_BUILTIN.concat(store.listMusic().map((m) => ({ id: `upload:${m.id}`, name: `${m.name} (uploaded)` }))),
       tts: tts || null,
       ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },
+      animation: { selected: animation.config().id, providers: animation.statuses() },
       storage: { configured: storage.isConfigured() },
       youtube: youtube.status(),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },

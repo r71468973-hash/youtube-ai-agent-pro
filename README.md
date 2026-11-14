@@ -15,6 +15,7 @@ A self-hosted dashboard that turns a text story into a narrated, captioned video
 | Approval gate | Videos stop at **Awaiting your approval**. Upload needs an explicit approve action with a confirmation box; a failed upload consumes the approval |
 | Cloud storage | Any S3-compatible bucket (Cloudflare R2, AWS S3, Backblaze B2, Supabase, MinIO) |
 | API keys | Encrypted at rest (AES-256-GCM), write-only in the UI, never returned by the API |
+| 3D animation | Consistent animated 3D characters, dialogue, lip-sync, camera moves (see below) |
 | Dashboard | Mobile-first, bottom tab bar on phones, light and dark mode |
 
 No npm dependencies. Requires Node 20+ and `ffmpeg`/`ffprobe`.
@@ -25,7 +26,7 @@ No npm dependencies. Requires Node 20+ and `ffmpeg`/`ffprobe`.
 cp .env.example .env        # optional; set at least ADMIN_PASSWORD
 export $(grep -v '^#' .env | xargs)
 npm start                   # http://localhost:3000
-npm test                    # end-to-end smoke test (renders real videos)
+npm test                    # unit + provider tests, then end-to-end test (renders real videos, incl. 3D)
 ```
 
 If `ADMIN_PASSWORD` is not set, one is generated and saved to `data/.admin_password`.
@@ -38,6 +39,16 @@ docker run -p 3000:3000 -v aivideo-data:/app/data -e ADMIN_PASSWORD=change-me -e
 ```
 
 This needs a long-running server with ffmpeg and a persistent disk (a VPS, Fly.io, Railway, Render). It will **not** work on serverless hosts such as Vercel or Netlify.
+
+### 3D animation (animated-3d mode)
+
+Choose **Video style: 3D animated** when creating a video. Each line is performed by consistent 3D cartoon characters (same look in every scene) that walk, run, jump, wave, idle, and show happy, sad, surprised or angry expressions. Characters speak with timed lip movement that follows each voice-over line.
+
+- **Story format:** write dialogue as `Name: line` (or `नाम: संवाद`). Add `[F]` or `[M]` after the name to set the voice gender, e.g. `Priya [F]: Hello`. Other sentences are narration, spoken by a voice-over while the main character acts. Actions and expressions come from keywords in each line (a heuristic, not story understanding).
+- **Renderer:** the default `local-3d` provider runs headless Chrome/Chromium with three.js (vendored, MIT, in `lib/animation/stage/vendor`). It is free, needs no API key, and renders every frame on this server.
+- **Optional paid provider:** `external-http` calls any video API that follows the job contract in `lib/animation/external.js`, using `VIDEO_API_KEY`. It has been tested only against a mock server. No specific vendor is integrated or verified.
+- **Requirements:** Chrome or Chromium (set `CHROME_PATH` if it is not in a standard location). The Docker image installs chromium. Rendering is CPU-heavy: expect minutes per minute of video at 1080p. Set `RENDER_3D_SCALE=0.5` to render faster at lower resolution.
+- **Limits:** characters are procedural primitives, not sculpted models. Lip-sync is timed to the voice-over length, not to phonemes. Without a TTS key the animation has no voice and says so.
 
 ### Connect YouTube
 
@@ -63,5 +74,7 @@ In **Settings > Cloud storage** enter endpoint, bucket and region, and save the 
 server.js        HTTP server, routes, approval gate
 lib/             vault, auth, store, providers, render, pipeline, storage, youtube
 public/          dashboard (index.html, styles.css, app.js)
+lib/animation/   3D animation: story script, scene specs, Chrome renderer, stage (three.js), external provider
+test/animation.js  unit and provider-contract tests
 test/smoke.js    end-to-end test
 ```
