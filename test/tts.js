@@ -19,10 +19,23 @@ while [ $# -gt 0 ]; do
   case "$1" in --write-media) out="$2"; shift 2;; --file) txt="$2"; shift 2;; *) shift;; esac
 done
 [ -s "$txt" ] || { echo "empty text" >&2; exit 2; }
+grep -q FAILEDGE "$txt" && { echo "NoAudioReceived (stand-in)" >&2; exit 1; }
 ffmpeg -v error -y -f lavfi -i "sine=frequency=440:duration=1" -codec:a libmp3lame "$out"
 `);
 fs.chmodSync(fakeBin, 0o755);
 process.env.EDGE_TTS_BIN = fakeBin;
+// Fake Piper: consumes stdin and writes a 1-second tone to --output_file.
+const fakePiper = path.join(work, 'piper');
+fs.writeFileSync(fakePiper, `#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do case "$1" in --output_file) out="$2"; shift 2;; *) shift;; esac; done
+cat > /dev/null
+ffmpeg -v error -y -f lavfi -i "sine=frequency=330:duration=1" "$out"
+`);
+fs.chmodSync(fakePiper, 0o755);
+fs.writeFileSync(path.join(work, 'model.onnx'), 'x');
+process.env.PIPER_BIN = fakePiper;
+process.env.PIPER_MODEL = path.join(work, 'model.onnx');
 process.env.DATA_DIR = work;
 
 const providers = require('../lib/providers');
@@ -47,6 +60,12 @@ const ok = (n) => { passed++; console.log(`  ok  ${n}`); };
   assert.strictEqual(r.fallbackFrom, 'openai');
   assert(r.audio.length > 500);
   ok('a failing paid voice falls back to the free Edge voice instead of failing the video');
+
+  const viaPiper = await providers.synthesizeWithFallback({ provider: 'edge', text: 'FAILEDGE नमस्ते', language: 'hi', gender: 'male' });
+  assert.strictEqual(viaPiper.provider, 'piper');
+  assert.strictEqual(viaPiper.fallbackFrom, 'edge');
+  assert(viaPiper.audio.length > 500);
+  ok('when Microsoft Edge refuses (NoAudioReceived), the line falls back to free Piper');
 
   const picked = providers.pickTtsProvider('hi');
   assert.strictEqual(picked, 'edge', 'auto mode prefers the free voice');
