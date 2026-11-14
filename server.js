@@ -11,6 +11,7 @@ const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
 const providers = require('./lib/providers');
 const animation = require('./lib/animation');
+const { generateHindiStory } = require('./lib/story');
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
 ensureDir(DATA_DIR);
@@ -108,11 +109,14 @@ function cleanText(s, max) {
 }
 
 function validateCreate(b) {
-  const story = cleanText(b.story, LIMITS.storyMax);
+  let story = cleanText(b.story, LIMITS.storyMax);
+  const mode = b.mode === 'animated-3d' ? 'animated-3d' : 'classic';
+  // Empty story + 3D + Hindi: write an original Hindi story offline (no paid API).
+  const autoStory = !story && mode === 'animated-3d' && b.language === 'hi';
+  if (autoStory) story = generateHindiStory();
   if (story.length < LIMITS.storyMin) throw Object.assign(new Error(`Story must be at least ${LIMITS.storyMin} characters.`), { code: 400 });
   if (!['hi', 'en'].includes(b.language)) throw Object.assign(new Error('Language must be "hi" or "en".'), { code: 400 });
   if (!FORMATS[b.format]) throw Object.assign(new Error('Format must be "shorts" or "long".'), { code: 400 });
-  const mode = b.mode === 'animated-3d' ? 'animated-3d' : 'classic';
   if (mode === 'animated-3d') {
     const st = animation.current();
     if (!st || !st.ok) throw Object.assign(new Error(`3D animation is not available: ${st ? st.reason : 'unknown provider'}`), { code: 409 });
@@ -133,7 +137,7 @@ function validateCreate(b) {
   };
 }
 
-const TTS_SETTINGS = ['auto', 'openai', 'elevenlabs', 'google', 'none'];
+const TTS_SETTINGS = ['auto', 'edge', 'piper', 'openai', 'elevenlabs', 'google', 'none'];
 function validateSettings(b) {
   const out = {};
   if (b.ttsProvider !== undefined) {

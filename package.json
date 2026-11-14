@@ -10,7 +10,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/animation.js && node test/smoke.js"
+    "test": "node test/animation.js && node test/tts.js && node test/smoke.js"
   },
   "dependencies": {}
 }
