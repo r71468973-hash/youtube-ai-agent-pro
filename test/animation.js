@@ -117,6 +117,18 @@ ok('voice layout equals scene length; timelines contiguous; lip-sync matches sub
     srv.close();
     fs.rmSync(work, { recursive: true, force: true });
   }
+  // --- time of day and camera shots
+  assert.strictEqual(script.inferTime('सुबह का सूरज निकला'), 'sunrise');
+  assert.strictEqual(script.inferTime('The sun rose over the hills at dawn'), 'sunrise');
+  assert.strictEqual(script.inferTime('शाम को दादाजी घर लौटे'), 'evening');
+  assert.strictEqual(script.inferTime('Rohan walked to the park.'), null);
+  ok('sunrise, evening and unspecified times are detected from Hindi and English');
+  const shots = [0, 1, 2, 3].map((k) => script.cameraFor(['wide', 'medium', 'closeup', 'tracking'][k], 1));
+  assert.notDeepStrictEqual(shots[0].from, shots[1].from);
+  assert.notDeepStrictEqual(shots[1].from, shots[3].from);
+  assert(Math.abs(shots[3].to[0] - shots[3].from[0]) > 10, 'tracking shot pans across the scene');
+  ok('camera shots differ: wide, medium, close-up and a tracking pan');
+
   console.log(`\n${passed} animation checks passed`);
 })().catch((e) => {
   console.error('\nFAILED:', e.message);
