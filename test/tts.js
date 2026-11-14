@@ -51,7 +51,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
 
   const direct = await providers.synthesize({ provider: 'edge', text: 'नमस्ते दोस्तों', language: 'hi', gender: 'male' });
   assert(direct.length > 500, 'edge produced audio');
-  assert((await require('../lib/util').mediaDuration(await writeAudioForDuration(direct))).duration > 0);
+  assert((await require('../lib/util').mediaDuration(await writeAudioForDuration(direct))) > 0);
   ok('Hindi male narration is generated and decoded as valid audio');
 
   assert.strictEqual(providers.isQuotaError(new Error('OpenAI TTS: HTTP 429 {"error":{"code":"insufficient_quota"}}')), true);
