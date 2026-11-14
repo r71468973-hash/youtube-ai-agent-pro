@@ -12,7 +12,9 @@ const pipeline = require('./lib/pipeline');
 const providers = require('./lib/providers');
 const animation = require('./lib/animation');
 const daily = require('./lib/daily');
+const publisher = require('./lib/publisher');
 const { generateHindiStory } = require('./lib/story');
+const uploading = new Set(); // video ids with an upload in progress (never two at once)
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
 ensureDir(DATA_DIR);
@@ -222,24 +224,55 @@ function validateSettings(b) {
  */
 async function approveAndUpload(id, meta) {
   const v = store.getVideo(id);
+  if (!v) return false;
+  // Duplicate prevention: a video that is already on YouTube, or already uploading, is never sent again.
+  if (!publisher.canUpload(v).ok || uploading.has(id)) return false;
+  uploading.add(id);
+  const scheduled = !!meta.publishAt;
+  const now = new Date().toISOString();
+  const prevAttempts = (v.schedule && v.schedule.attempts) || 0;
+  const scheduleMeta = { title: meta.title, description: meta.description, tags: meta.tags, privacy: 'public', publishAt: meta.publishAt || null };
   v.status = 'uploading';
   v.error = null;
-  v.approval = { approvedAt: new Date().toISOString(), title: meta.title, privacy: meta.privacy };
+  v.approval = { approvedAt: now, title: meta.title, privacy: meta.privacy, publishAt: meta.publishAt || null };
   store.saveVideo(v);
   try {
     const file = path.join(pipeline.videoDir(id), 'video.mp4');
     if (!fs.existsSync(file)) throw new Error('Video file is no longer on this server. Regenerate it.');
-    const r = await youtube.uploadVideo({ file, title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy, isShort: v.format === 'shorts' });
+    const r = await youtube.uploadVideo({
+      file, title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy,
+      isShort: v.format === 'shorts', publishAt: meta.publishAt || null,
+    });
     const done = store.getVideo(id);
-    Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: new Date().toISOString() }, error: null });
+    if (scheduled) {
+      // YouTube holds the video privately until publishAt, then makes it public itself.
+      Object.assign(done, {
+        status: 'scheduled', error: null,
+        youtube: { videoId: r.videoId, url: r.url, privacy: 'scheduled', uploadedAt: now },
+        schedule: { publishAt: meta.publishAt, pending: false, attempts: prevAttempts + 1, lastAttemptAt: now, meta: scheduleMeta },
+      });
+    } else {
+      Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: now }, error: null });
+    }
     store.saveVideo(done);
     return true;
   } catch (e) {
     const failed = store.getVideo(id);
-    // Back to "ready": the approval is consumed, the owner must approve again to retry.
-    Object.assign(failed, { status: 'ready', error: `YouTube upload failed: ${scrub(e.message)}`, approval: null });
+    const message = `YouTube upload failed: ${scrub(e.message)}`;
+    if (scheduled) {
+      // Stays "ready" with a pending retry; the scheduler retries it with a gap, up to a limit.
+      Object.assign(failed, {
+        status: 'ready', error: message, approval: null,
+        schedule: { publishAt: meta.publishAt, pending: true, attempts: prevAttempts + 1, lastAttemptAt: now, meta: scheduleMeta },
+      });
+    } else {
+      // Back to "ready": the approval is consumed, the owner must approve again to retry.
+      Object.assign(failed, { status: 'ready', error: message, approval: null });
+    }
     store.saveVideo(failed);
     return false;
+  } finally {
+    uploading.delete(id);
   }
 }
 
@@ -252,7 +285,14 @@ function validateApproval(b) {
   const description = cleanText(b.description, 5000);
   const tags = (Array.isArray(b.tags) ? b.tags : String(b.tags || '').split(','))
     .map((t) => cleanText(t, 30).replace(/[<>]/g, '')).filter(Boolean).slice(0, 15);
-  return { title, description, tags, privacy };
+  // Optional scheduled publishing: the video becomes public on YouTube at this India time.
+  // Making a video public needs its own explicit consent, separate from approving the upload.
+  if (b.publishAt) {
+    const publishAt = publisher.toUtcPublishAt(b.publishAt);
+    if (b.publicAtTimeConsent !== true) throw Object.assign(new Error('Tick the box to confirm the video becomes public on YouTube at that time.'), { code: 400 });
+    return { title, description, tags, privacy: 'public', publishAt };
+  }
+  return { title, description, tags, privacy, publishAt: null };
 }
 
 /* ------------------------------------------------------------------- router */
@@ -350,6 +390,23 @@ async function handleApi(req, res, url) {
 
   /* Videos */
   if (method === 'GET' && p === '/api/videos') return json(res, 200, { videos: store.listVideos().map(publicVideo) });
+  // Publishing queue: scheduled, published and failed videos, in publish-time order (India time shown by the dashboard).
+  if (method === 'GET' && p === '/api/schedule') {
+    const items = store.listVideos()
+      .filter((v) => v.schedule || ['scheduled', 'published', 'failed'].includes(v.status))
+      .map((v) => ({
+        id: v.id,
+        title: (v.approval && v.approval.title) || v.title || 'Untitled',
+        status: v.status,
+        publishAt: v.schedule ? v.schedule.publishAt : null,
+        publishedAt: v.youtube && v.youtube.publishedAt ? v.youtube.publishedAt : null,
+        url: v.youtube && v.youtube.url ? v.youtube.url : null,
+        attempts: v.schedule ? v.schedule.attempts || 0 : 0,
+        error: v.error || null,
+      }))
+      .sort((a, b) => (a.publishAt || a.publishedAt || '9999').localeCompare(b.publishAt || b.publishedAt || '9999'));
+    return json(res, 200, { items, now: new Date().toISOString() });
+  }
   if (method === 'POST' && p === '/api/videos') {
     const input = validateCreate(await readJson(req));
     const active = store.listVideos().filter((v) => ['queued', 'generating'].includes(v.status)).length;
@@ -399,7 +456,8 @@ async function handleApi(req, res, url) {
     }
 
     if (action === 'approve' && method === 'POST') {
-      if (v.status !== 'ready') return bad(res, v.status === 'published' ? 'Already uploaded to YouTube.' : 'Only videos in the "ready" state can be approved.', 409);
+      if (v.youtube && v.youtube.videoId) return bad(res, 'Already uploaded to YouTube.', 409);
+      if (!['ready', 'failed'].includes(v.status)) return bad(res, 'Only videos awaiting approval or failed uploads can be approved.', 409);
       const yt = youtube.status();
       if (!yt.connected) return bad(res, 'Connect your YouTube account first.', 409);
       const meta = validateApproval(await readJson(req));
@@ -456,6 +514,18 @@ server.listen(PORT, () => {
     (body) => createJob(validateCreate(body)).id,
     (id, meta) => approveAndUpload(id, { ...meta, privacy: 'private' }),
   );
+  // Publishing scheduler: once a minute it confirms scheduled videos with YouTube and retries failed
+  // uploads. It does nothing until YouTube is connected. YouTube itself makes a video public at its time.
+  setInterval(() => {
+    if (!youtube.status().connected) return;
+    publisher.tick({
+      videos: () => store.listVideos(),
+      updateVideo: (id, patch) => { const v = store.getVideo(id); if (v) { Object.assign(v, patch); store.saveVideo(v); } },
+      getPublishState: youtube.getPublishState,
+      retry: (id) => { const v = store.getVideo(id); return v && v.schedule && v.schedule.meta ? approveAndUpload(id, v.schedule.meta) : false; },
+    }).then((acts) => { for (const [a, id] of acts) console.log(`[schedule] ${a} ${id}`); })
+      .catch((e) => console.log(`[schedule] ${scrub(e.message)}`));
+  }, 60 * 1000);
 });
 
 module.exports = server;

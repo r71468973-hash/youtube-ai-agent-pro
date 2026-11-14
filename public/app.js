@@ -20,7 +20,7 @@
     return el;
   }
   const svg = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(s.namespaceURI, 'path'); p.setAttribute('d', d); s.append(p); return s; };
-  const ICONS = { create: 'M12 5v14M5 12h14', library: 'M4 6h16M4 12h16M4 18h10', settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z' };
+  const ICONS = { create: 'M12 5v14M5 12h14', library: 'M4 6h16M4 12h16M4 18h10', queue: 'M4 7h16M4 12h10M4 17h7', settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z' };
 
   function toast(msg, ms = 4000) {
     const t = h('div', { class: 'toast' }, msg);
@@ -45,7 +45,7 @@
   const ACTIVE = ['queued', 'generating', 'uploading'];
   const STATUS = {
     queued: ['Queued', 'brand'], generating: ['Generating', 'brand'], ready: ['Awaiting your approval', 'warn'],
-    uploading: ['Uploading to YouTube', 'brand'], published: ['Published', 'ok'], failed: ['Failed', 'err'], rejected: ['Rejected', ''],
+    uploading: ['Uploading to YouTube', 'brand'], scheduled: ['Scheduled', 'brand'], published: ['Published', 'ok'], failed: ['Failed', 'err'], rejected: ['Rejected', ''],
   };
   const badge = (s) => { const [t, c] = STATUS[s] || [s, '']; return h('span', { class: `badge ${c}` }, t); };
   const fmtDur = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '–');
@@ -92,7 +92,7 @@
   }
 
   function shell(content) {
-    const tabs = [['create', 'Create'], ['library', 'Videos'], ['settings', 'Settings']];
+    const tabs = [['create', 'Create'], ['library', 'Videos'], ['queue', 'Queue'], ['settings', 'Settings']];
     const go = (v) => () => { state.view = v; render(); window.scrollTo(0, 0); };
     const waiting = state.videos.filter((v) => v.status === 'ready').length;
     return h('div', { class: 'shell' },
@@ -307,16 +307,19 @@
   }
 
   function approvalForm(v, yt) {
-    const m = { title: v.title, description: '', tags: '', privacy: 'private', ok: false };
+    const m = { title: v.title, description: '', tags: '', privacy: 'private', ok: false, publishAt: '', consent: false };
     const go = h('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Approve and upload to YouTube');
+    const consentBox = h('input', { type: 'checkbox', onchange: (e) => { m.consent = e.target.checked; } });
     const ack = h('input', { type: 'checkbox', onchange: (e) => { m.ok = e.target.checked; go.disabled = !m.ok || !yt.connected; } });
     return h('form', { class: 'card stack', onsubmit: async (e) => {
       e.preventDefault();
       if (!m.ok) return;
       go.disabled = true;
       try {
-        await api('POST', `/api/videos/${v.id}/approve`, { confirm: true, title: m.title, description: m.description, tags: m.tags, privacy: m.privacy });
-        toast('Approved. Uploading to YouTube…');
+        const body = { confirm: true, title: m.title, description: m.description, tags: m.tags, privacy: m.privacy };
+        if (m.publishAt) Object.assign(body, { publishAt: m.publishAt, publicAtTimeConsent: m.consent });
+        await api('POST', `/api/videos/${v.id}/approve`, body);
+        toast(m.publishAt ? 'Scheduled. YouTube will publish it at the chosen India time.' : 'Approved. Uploading to YouTube…');
         await refreshVideos();
         await drawModal();
       } catch (ex) { toast(ex.message, 7000); go.disabled = false; }
@@ -327,14 +330,44 @@
     h('label', {}, 'Description', h('textarea', { style: 'min-height:90px', oninput: (e) => { m.description = e.target.value; } })),
     h('label', {}, 'Tags (comma separated)', h('input', { type: 'text', oninput: (e) => { m.tags = e.target.value; } })),
     h('label', {}, 'Visibility', h('select', { onchange: (e) => { m.privacy = e.target.value; } }, [['private', 'Private (recommended for first upload)'], ['unlisted', 'Unlisted'], ['public', 'Public']].map(([val, l]) => h('option', { value: val }, l)))),
+    h('label', {}, 'Publish at (India time, optional)', h('input', { type: 'datetime-local', oninput: (e) => { m.publishAt = e.target.value; } })),
+    h('p', { class: 'small muted' }, 'Leave empty to upload now using the visibility above. With a time, the video is held on YouTube and becomes public at that time. Visibility is then ignored.'),
+    h('label', { class: 'check' }, consentBox, 'Make this video public on YouTube at the chosen time (only if a time is set).'),
     h('label', { class: 'check' }, ack, 'I have watched this video and approve uploading it.'),
     h('div', { class: 'row' }, go, h('button', { class: 'btn', type: 'button', onclick: async () => { try { await api('POST', `/api/videos/${v.id}/reject`); await refreshVideos(); await drawModal(); } catch (e) { toast(e.message, 6000); } } }, 'Reject')));
+  }
+
+  /* ------------------------------------------------------------------ queue */
+  const istText = (iso) => `${new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(iso))} IST`;
+
+  function queueRow(it) {
+    const when = it.publishAt ? `Publishes ${istText(it.publishAt)}` : (it.publishedAt ? `Published ${istText(it.publishedAt)}` : '');
+    return h('div', { class: 'card stack' },
+      h('div', { class: 'row' }, badge(it.status), h('strong', {}, it.title)),
+      when ? h('p', { class: 'small' }, when) : null,
+      it.attempts ? h('p', { class: 'small muted' }, `Upload attempts: ${it.attempts}`) : null,
+      it.error ? h('p', { class: 'notice err' }, it.error) : null,
+      it.url ? h('a', { href: it.url, target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube') : null);
+  }
+
+  function viewQueue() {
+    const list = h('div', { class: 'stack', 'aria-live': 'polite' }, h('p', { class: 'small muted' }, 'Loading the publishing queue…'));
+    api('GET', '/api/schedule').then((r) => {
+      const items = r.items || [];
+      list.replaceChildren(...(items.length
+        ? items.map(queueRow)
+        : [h('p', { class: 'small muted' }, 'Nothing is scheduled yet. Open a video in Videos and choose a publish time.')]));
+    }).catch((e) => list.replaceChildren(h('p', { class: 'notice err' }, e.message)));
+    return h('div', { class: 'stack' },
+      h('h2', {}, 'Publishing queue'),
+      h('p', { class: 'small muted' }, 'Times are India time (IST). YouTube makes a scheduled video public at its time, even when this app is switched off.'),
+      list);
   }
 
   /* ------------------------------------------------------------------ main */
   function render() {
     if (!state.csrf) return renderLogin();
-    const views = { create: viewCreate, library: viewLibrary, settings: viewSettings };
+    const views = { create: viewCreate, library: viewLibrary, queue: viewQueue, settings: viewSettings };
     $app.replaceChildren(shell(views[state.view]()));
   }
 

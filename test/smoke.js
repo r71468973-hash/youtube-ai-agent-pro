@@ -75,6 +75,10 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
 
     // --- validation
     assert.strictEqual((await call('POST', '/api/videos', { story: 'short', language: 'en', format: 'shorts' })).status, 400); ok('short story rejected');
+
+    // Publishing queue: the endpoint works with nothing scheduled, and scheduling needs YouTube first.
+    const queue = await call('GET', '/api/schedule');
+    assert.strictEqual(queue.status, 200); assert(Array.isArray(queue.data.items)); ok('publishing queue endpoint works');
     assert.strictEqual((await call('POST', '/api/videos', { story: 'x'.repeat(50), language: 'fr', format: 'shorts' })).status, 400); ok('bad language rejected');
 
     // --- English Short with music + captions
