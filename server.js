@@ -161,6 +161,10 @@ function validateSettings(b) {
     if (typeof b.dailyEnabled !== 'boolean') throw Object.assign(new Error('dailyEnabled must be true or false'), { code: 400 });
     out.dailyEnabled = b.dailyEnabled;
   }
+  if (b.dailyAutoUpload !== undefined) {
+    if (typeof b.dailyAutoUpload !== 'boolean') throw Object.assign(new Error('dailyAutoUpload must be true or false'), { code: 400 });
+    out.dailyAutoUpload = b.dailyAutoUpload;
+  }
   if (b.dailyHour !== undefined) {
     const h = Number(b.dailyHour);
     if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
@@ -212,7 +216,9 @@ function validateSettings(b) {
 /**
  * Approval gate. A video is uploaded to YouTube only through this function, and only when
  * the owner explicitly approves it (POST /api/videos/:id/approve with confirm: true) while
- * it is in the "ready" state. There is no auto-upload path anywhere else in the code.
+ * it is in the "ready" state. The only other caller is the daily job, and only when the owner has
+ * turned on dailyAutoUpload; it always passes privacy "private". Resolves true only when YouTube
+ * confirmed the upload.
  */
 async function approveAndUpload(id, meta) {
   const v = store.getVideo(id);
@@ -227,11 +233,13 @@ async function approveAndUpload(id, meta) {
     const done = store.getVideo(id);
     Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: new Date().toISOString() }, error: null });
     store.saveVideo(done);
+    return true;
   } catch (e) {
     const failed = store.getVideo(id);
     // Back to "ready": the approval is consumed, the owner must approve again to retry.
     Object.assign(failed, { status: 'ready', error: `YouTube upload failed: ${scrub(e.message)}`, approval: null });
     store.saveVideo(failed);
+    return false;
   }
 }
 
@@ -443,7 +451,11 @@ server.listen(PORT, () => {
   if (auth.wasGenerated()) console.log(`No ADMIN_PASSWORD set. Generated one and saved it to ${path.join(DATA_DIR, '.admin_password')}`);
   if (!process.env.ADMIN_PASSWORD) console.log('Set ADMIN_PASSWORD in the environment to choose your own login password.');
   // Daily job: makes one story video per day (India time) and waits for your approval. Off until enabled in Settings.
-  daily.start((body) => createJob(validateCreate(body)).id);
+  // The upload callback is always PRIVATE; it is only used when dailyAutoUpload is on.
+  daily.start(
+    (body) => createJob(validateCreate(body)).id,
+    (id, meta) => approveAndUpload(id, { ...meta, privacy: 'private' }),
+  );
 });
 
 module.exports = server;

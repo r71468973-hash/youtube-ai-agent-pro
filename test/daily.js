@@ -81,6 +81,54 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     );
     ok('stops after three failed attempts in a day');
 
+    // --- daily auto-upload (always PRIVATE, once per video, retries honestly)
+    const calls = [];
+    const upload = async (id, meta) => { calls.push({ id, meta }); return true; };
+    const at = new Date('2026-11-14T04:00:00Z');
+    let videoStatus = 'generating';
+    const getVideo = (id) => ({ id, status: videoStatus, youtube: null });
+    const ytReady = { v: true };
+    const isYouTubeReady = () => ytReady.v;
+    store.setSettings({ dailyAutoUpload: false, dailyLastVideo: { id: 'daily-1', title: 'कहानी', description: 'd', tags: ['Shorts'] } });
+
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: at }), 'auto-upload off');
+    assert.strictEqual(calls.length, 0);
+    ok('auto-upload is off by default and uploads nothing');
+
+    store.setSettings({ dailyAutoUpload: true });
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: at }), 'waiting for the video (generating)');
+    assert.strictEqual(calls.length, 0);
+    ok('does not upload a video that is still generating');
+
+    videoStatus = 'ready';
+    ytReady.v = false;
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: at }), 'YouTube is not connected');
+    assert.strictEqual(calls.length, 0);
+    ok('does not upload when YouTube is not connected');
+
+    ytReady.v = true;
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: at }), 'uploaded daily-1 as private');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].meta.privacy, 'private', 'daily uploads are always private');
+    assert.strictEqual(calls[0].meta.title, 'कहानी');
+    ok('uploads the ready daily video once, as PRIVATE');
+
+    assert.strictEqual(store.getSettings().dailyLastVideo.uploadedAt !== undefined, true);
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: at }), 'already uploaded');
+    assert.strictEqual(calls.length, 1, 'no duplicate upload');
+    ok('never uploads the same daily video twice');
+
+    // Failure path: a refused upload is retried only after the gap, and is not marked done.
+    store.setSettings({ dailyLastVideo: { id: 'daily-2', title: 't', description: 'd', tags: [] } });
+    const refuse = async () => false;
+    assert.strictEqual(await daily.autoUploadTick({ upload: refuse, isYouTubeReady, getVideo, now: at }), 'upload failed; will retry');
+    assert.strictEqual(store.getSettings().dailyLastVideo.uploadedAt, undefined);
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: new Date(at.getTime() + 60000) }), 'waiting before retrying the upload');
+    assert.strictEqual(calls.length, 1, 'retry waits for the gap');
+    const later = new Date(at.getTime() + 11 * 60 * 1000);
+    assert.strictEqual(await daily.autoUploadTick({ upload, isYouTubeReady, getVideo, now: later }), 'uploaded daily-2 as private');
+    ok('a failed upload is retried after the gap, and only marked done when YouTube confirms');
+
     console.log(`\n${passed} daily checks passed`);
   } catch (e) {
     console.error('\nFAILED:', e.message);
