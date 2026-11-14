@@ -1,30 +1,33 @@
 'use strict';
 /**
- * Voice checks: free Edge-TTS path, and the fallback when a paid voice returns 429 insufficient_quota.
- * A stand-in edge-tts script is used so the spawn/file plumbing is exercised without internet.
- * The real Microsoft endpoint is NOT contacted here; that needs a live run on the server.
+ * Voice checks: retry behavior, valid audio verification, Hindi voices, and free Piper fallback.
+ * A stand-in edge-tts executable keeps the test independent of Microsoft's network service.
  */
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'tts-'));
 const fakeBin = path.join(work, 'edge-tts');
-// Fake CLI: reads --file and --write-media, writes a real 1-second MP3 to the output path.
+const callsFile = path.join(work, 'calls');
+process.env.FAKE_EDGE_CALLS = callsFile;
 fs.writeFileSync(fakeBin, `#!/bin/sh
 out=""; txt=""
 while [ $# -gt 0 ]; do
   case "$1" in --write-media) out="$2"; shift 2;; --file) txt="$2"; shift 2;; *) shift;; esac
 done
 [ -s "$txt" ] || { echo "empty text" >&2; exit 2; }
+printf x >> "$FAKE_EDGE_CALLS"
 grep -q FAILEDGE "$txt" && { echo "NoAudioReceived (stand-in)" >&2; exit 1; }
+grep -q INVALIDEDGE "$txt" && { printf 'not an audio stream' > "$out"; exit 0; }
 ffmpeg -v error -y -f lavfi -i "sine=frequency=440:duration=1" -codec:a libmp3lame "$out"
 `);
 fs.chmodSync(fakeBin, 0o755);
 process.env.EDGE_TTS_BIN = fakeBin;
-// Fake Piper: consumes stdin and writes a 1-second tone to --output_file.
+process.env.EDGE_TTS_RETRY_DELAY_MS = '10';
+process.env.EDGE_TTS_TIMEOUT_MS = '5000';
+
 const fakePiper = path.join(work, 'piper');
 fs.writeFileSync(fakePiper, `#!/bin/sh
 out=""
@@ -40,37 +43,49 @@ process.env.DATA_DIR = work;
 
 const providers = require('../lib/providers');
 let passed = 0;
-const ok = (n) => { passed++; console.log(`  ok  ${n}`); };
+const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
 
 (async () => {
   assert.strictEqual(providers.edgeStatus().ok, true);
   ok('edge-tts is reported available when its binary exists');
 
   const direct = await providers.synthesize({ provider: 'edge', text: 'नमस्ते दोस्तों', language: 'hi', gender: 'male' });
-  assert(direct.length > 500, 'edge produced an mp3');
-  ok('Edge-TTS returns an MP3 for Hindi male narration (stand-in binary)');
+  assert(direct.length > 500, 'edge produced audio');
+  assert((await require('../lib/util').mediaDuration(await writeAudioForDuration(direct))).duration > 0);
+  ok('Hindi male narration is generated and decoded as valid audio');
 
   assert.strictEqual(providers.isQuotaError(new Error('OpenAI TTS: HTTP 429 {"error":{"code":"insufficient_quota"}}')), true);
   assert.strictEqual(providers.isQuotaError(new Error('Piper failed')), false);
   ok('insufficient_quota / 429 is recognised as a quota error');
 
-  // OpenAI cannot be reached from this sandbox, so it fails the same way a quota error does.
-  const r = await providers.synthesizeWithFallback({ provider: 'openai', text: 'नमस्ते', language: 'hi', gender: 'male' });
-  assert.strictEqual(r.provider, 'edge');
-  assert.strictEqual(r.fallbackFrom, 'openai');
-  assert(r.audio.length > 500);
-  ok('a failing paid voice falls back to the free Edge voice instead of failing the video');
+  const before = fs.existsSync(callsFile) ? fs.statSync(callsFile).size : 0;
+  const fallback = await providers.synthesizeWithFallback({ provider: 'edge', text: 'FAILEDGE नमस्ते', language: 'hi', gender: 'male' });
+  assert.strictEqual(fallback.provider, 'piper');
+  assert.strictEqual(fallback.fallbackFrom, 'edge');
+  assert(fallback.audio.length > 500);
+  const retryCount = fs.statSync(callsFile).size - before;
+  assert.strictEqual(retryCount, 4, 'one attempt plus three automatic retries');
+  ok('NoAudioReceived is retried three times, then free offline Piper is used');
 
-  const viaPiper = await providers.synthesizeWithFallback({ provider: 'edge', text: 'FAILEDGE नमस्ते', language: 'hi', gender: 'male' });
-  assert.strictEqual(viaPiper.provider, 'piper');
-  assert.strictEqual(viaPiper.fallbackFrom, 'edge');
-  assert(viaPiper.audio.length > 500);
-  ok('when Microsoft Edge refuses (NoAudioReceived), the line falls back to free Piper');
+  const corrupt = await providers.synthesizeWithFallback({ provider: 'edge', text: 'INVALIDEDGE नमस्ते', language: 'hi', gender: 'female' });
+  assert.strictEqual(corrupt.provider, 'piper', 'corrupt Edge output must never be returned');
+  assert(corrupt.audio.length > 500);
+  ok('corrupt/non-audio output is rejected before fallback audio is returned');
 
   const picked = providers.pickTtsProvider('hi');
   assert.strictEqual(picked, 'edge', 'auto mode prefers the free voice');
-  ok('automatic mode picks the free Edge voice first, so no paid credits are needed');
+  ok('automatic mode picks the free Edge voice first');
 
   fs.rmSync(work, { recursive: true, force: true });
   console.log(`\n${passed} voice checks passed`);
-})().catch((e) => { console.error('\nFAILED:', e.message); fs.rmSync(work, { recursive: true, force: true }); process.exitCode = 1; });
+})().catch((e) => {
+  console.error('\nFAILED:', e.stack || e.message);
+  fs.rmSync(work, { recursive: true, force: true });
+  process.exitCode = 1;
+});
+
+async function writeAudioForDuration(audio) {
+  const file = path.join(work, `verify-${Date.now()}.mp3`);
+  fs.writeFileSync(file, audio);
+  return file;
+}
