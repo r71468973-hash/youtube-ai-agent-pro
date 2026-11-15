@@ -223,16 +223,31 @@
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: f.pathStyle, onchange: (e) => { f.pathStyle = e.target.checked; } }), 'Path-style URLs (leave on for R2, MinIO, B2)'),
       h('button', { class: 'btn primary', type: 'submit' }, 'Save storage settings'));
 
-    const prefs = { ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia, dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload };
+    const prefs = {
+      ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
+      dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload,
+      dailyHour: s.dailyHour ?? 9, dailyPublishHour: s.dailyPublishHour ?? 18, dailyPublishMinute: s.dailyPublishMinute ?? 30,
+      dailyPublic: !!s.dailyPublic, dailyPublicConsent: false,
+    };
+    const consentGiven = !!s.dailyPublicConsentAt;
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
       h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
       h('label', {}, 'Scene visuals', h('select', { onchange: (e) => { prefs.imageMode = e.target.value; } }, [['gradient', 'Animated gradients (free)'], ['ai', 'AI images (needs OpenAI key, costs per image)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.imageMode }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('h3', {}, 'Daily video'),
-      h('p', { class: 'small muted' }, 'Once a day (9:00 India time) one new original Hindi cartoon Short is made. Nothing is uploaded unless you turn on auto-upload below.'),
+      h('p', { class: 'small muted' }, `Once a day (${String(prefs.dailyHour).padStart(2, '0')}:00 India time) one new original Hindi cartoon Short is made. Nothing is uploaded unless you turn on daily upload below.`),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyEnabled, onchange: (e) => { prefs.dailyEnabled = e.target.checked; } }), 'Make one daily video'),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyAutoUpload, onchange: (e) => { prefs.dailyAutoUpload = e.target.checked; } }), 'Upload each daily video to my YouTube channel as PRIVATE (you make it public in YouTube Studio)'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyAutoUpload, onchange: (e) => { prefs.dailyAutoUpload = e.target.checked; } }), 'Upload each daily video to my YouTube channel'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyPublic, onchange: (e) => { prefs.dailyPublic = e.target.checked; } }), 'Make each daily video public on YouTube at the publish time below (otherwise it stays PRIVATE)'),
+      h('p', { class: 'small muted' }, 'Publish time (India time, IST)'),
+      h('div', { class: 'row' },
+        h('input', { type: 'number', min: 0, max: 23, value: prefs.dailyPublishHour, 'aria-label': 'Publish hour', oninput: (e) => { prefs.dailyPublishHour = Number(e.target.value); } }),
+        h('span', {}, ':'),
+        h('input', { type: 'number', min: 0, max: 59, value: prefs.dailyPublishMinute, 'aria-label': 'Publish minute', oninput: (e) => { prefs.dailyPublishMinute = Number(e.target.value); } })),
+      consentGiven
+        ? h('p', { class: 'small muted' }, `Public publishing consent given on ${new Date(s.dailyPublicConsentAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. Turning public publishing off clears it.`)
+        : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyPublicConsent, onchange: (e) => { prefs.dailyPublicConsent = e.target.checked; } }), 'I confirm: each daily video will become public on my channel at that time without another approval. This is asked once.'),
       h('button', { class: 'btn primary', type: 'submit' }, 'Save'));
 
     const anim = state.overview.animation || { selected: 'local-3d', providers: [] };

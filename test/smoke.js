@@ -83,6 +83,10 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     // Publishing queue: the endpoint works with nothing scheduled, and scheduling needs YouTube first.
     const queue = await call('GET', '/api/schedule');
     assert.strictEqual(queue.status, 200); assert(Array.isArray(queue.data.items)); ok('publishing queue endpoint works');
+    // Daily public publishing needs daily upload on, and a one-time consent. Nothing is uploaded by these checks.
+    assert.strictEqual((await call('PUT', '/api/settings', { dailyPublic: true, dailyAutoUpload: false })).status, 400); ok('public daily publishing needs daily upload on');
+    assert.strictEqual((await call('PUT', '/api/settings', { dailyPublic: true, dailyAutoUpload: true })).status, 400); ok('public daily publishing needs the one-time consent');
+    assert.strictEqual((await call('PUT', '/api/settings', { dailyPublishHour: 25 })).status, 400); ok('daily publish hour is validated');
     assert.strictEqual((await call('POST', '/api/videos', { story: 'x'.repeat(50), language: 'fr', format: 'shorts' })).status, 400); ok('bad language rejected');
 
     // --- English Short with music + captions

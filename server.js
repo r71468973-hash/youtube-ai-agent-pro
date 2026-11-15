@@ -179,6 +179,34 @@ function validateSettings(b) {
     if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
     out.dailyHour = h;
   }
+  if (b.dailyPublishHour !== undefined) {
+    const h = Number(b.dailyPublishHour);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyPublishHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
+    out.dailyPublishHour = h;
+  }
+  if (b.dailyPublishMinute !== undefined) {
+    const m = Number(b.dailyPublishMinute);
+    if (!Number.isInteger(m) || m < 0 || m > 59) throw Object.assign(new Error('dailyPublishMinute must be from 0 to 59'), { code: 400 });
+    out.dailyPublishMinute = m;
+  }
+  if (b.dailyPublic !== undefined) {
+    if (typeof b.dailyPublic !== 'boolean') throw Object.assign(new Error('dailyPublic must be true or false'), { code: 400 });
+    if (b.dailyPublic) {
+      // Public publishing is a separate, explicit choice: it needs daily upload on, and a one-time consent
+      // recorded with its time. Turning it off clears the consent, so turning it on again asks once more.
+      const cur = store.getSettings();
+      const autoUpload = b.dailyAutoUpload !== undefined ? b.dailyAutoUpload : cur.dailyAutoUpload;
+      if (!autoUpload) throw Object.assign(new Error('Turn on daily upload first. Public publishing needs it.'), { code: 400 });
+      if (!cur.dailyPublicConsentAt) {
+        if (b.dailyPublicConsent !== true) throw Object.assign(new Error('Tick the consent box: each daily video will become public on YouTube at the chosen India time.'), { code: 400 });
+        out.dailyPublicConsentAt = new Date().toISOString();
+      }
+      out.dailyPublic = true;
+    } else {
+      out.dailyPublic = false;
+      out.dailyPublicConsentAt = null;
+    }
+  }
   for (const k of ['elevenVoiceFemale', 'elevenVoiceMale']) {
     if (b[k] !== undefined) {
       if (!/^[A-Za-z0-9]{10,40}$/.test(b[k])) throw Object.assign(new Error('Invalid ElevenLabs voice id'), { code: 400 });
@@ -554,10 +582,11 @@ server.listen(PORT, () => {
   if (auth.wasGenerated()) console.log(`No ADMIN_PASSWORD set. Generated one and saved it to ${path.join(DATA_DIR, '.admin_password')}`);
   if (!process.env.ADMIN_PASSWORD) console.log('Set ADMIN_PASSWORD in the environment to choose your own login password.');
   // Daily job: makes one story video per day (India time) and waits for your approval. Off until enabled in Settings.
-  // The upload callback is always PRIVATE; it is only used when dailyAutoUpload is on.
+  // The upload callback only runs when dailyAutoUpload is on. Its privacy comes from daily.dailyPublishPlan:
+  // PRIVATE, or public at the chosen India time once the owner has given the one-time consent.
   daily.start(
     (body) => createJob(validateCreate(body)).id,
-    (id, meta) => approveAndUpload(id, { ...meta, privacy: 'private' }),
+    (id, meta) => approveAndUpload(id, meta),
   );
   // Publishing scheduler: once a minute it confirms scheduled videos with YouTube and retries failed
   // uploads. It does nothing until YouTube is connected. YouTube itself makes a video public at its time.
