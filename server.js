@@ -503,6 +503,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// A failed background render must not take the whole studio down. Errors are logged (secrets scrubbed) and the server keeps serving.
+process.on('uncaughtException', (e) => console.error('[process] uncaught exception:', scrub((e && e.stack) || String(e))));
+process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection:', scrub((e && e.stack) || String(e))));
+
 server.listen(PORT, () => {
   console.log(`AI Video Studio running at ${BASE_URL}`);
   const pw = auth.adminPassword();
