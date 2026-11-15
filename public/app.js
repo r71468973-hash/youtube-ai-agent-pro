@@ -112,6 +112,22 @@
     }));
   }
 
+  /* Daily publishing status: next video made, next time a video becomes public (India time), recent notices. */
+  const istAt = (iso) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(iso)) + ' IST';
+  function dailyCard(ov) {
+    const d = ov.daily || {};
+    const recent = (ov.notifications || []).slice(0, 5);
+    return h('div', { class: 'card stack', 'aria-label': 'Daily publishing' },
+      h('h3', {}, 'Daily publishing'),
+      h('p', { class: 'small' }, d.message || ''),
+      h('p', {}, h('strong', {}, 'Next publish: '), d.nextPublishAt ? `${istAt(d.nextPublishAt)}${d.nextPublishVideo ? ` · ${d.nextPublishVideo.title}` : ''}` : 'not scheduled yet'),
+      h('p', {}, h('strong', {}, 'Next video made: '), d.nextCreateAt ? istAt(d.nextCreateAt) : 'daily videos are off'),
+      d.lastError ? h('p', { class: 'notice warn' }, `Last daily error: ${d.lastError.message}`) : null,
+      recent.length
+        ? h('div', { class: 'stack' }, h('strong', {}, 'Recent notices'), recent.map((n) => h('p', { class: 'small' }, h('strong', {}, `${istAt(n.at)} · `), n.title)))
+        : h('p', { class: 'small muted' }, 'No notices yet.'));
+  }
+
   function viewCreate() {
     const ov = state.overview;
     const f = (state.form = state.form || { title: '', story: '', language: 'en', format: 'shorts', voiceGender: 'female', captions: true, music: 'ambient-calm', mode: 'animated-3d' });
@@ -119,6 +135,7 @@
     const animOk = (anim.providers.find((p) => p.id === anim.selected) || {}).ok;
     if (!animOk) f.mode = 'classic';
     const notes = [];
+    if (ov.daily) notes.push(dailyCard(ov));
     if (!animOk) notes.push(h('p', { class: 'notice warn' }, '3D animation is unavailable: ' + ((anim.providers.find((p) => p.id === anim.selected) || {}).reason || 'unknown') + ' Classic videos still work.'));
     if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, 'No text-to-speech key is set. Videos will have captions and music but no spoken voice. Add an OpenAI, ElevenLabs or Google key in Settings.'));
     if (!ov.ai.scenes) notes.push(h('p', { class: 'notice' }, 'Tip: add an Anthropic key in Settings for smarter scene planning. Without it the story is split by sentences.'));
@@ -232,7 +249,7 @@
     const prefs = {
       ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
       dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload,
-      dailyHour: s.dailyHour ?? 9, dailyPublishHour: s.dailyPublishHour ?? 18, dailyPublishMinute: s.dailyPublishMinute ?? 30,
+      dailyHour: s.dailyHour ?? 4, dailyPublishHour: s.dailyPublishHour ?? 6, dailyPublishMinute: s.dailyPublishMinute ?? 30,
       dailyPublic: !!s.dailyPublic, dailyPublicConsent: false,
     };
     const consentGiven = !!s.dailyPublicConsentAt;

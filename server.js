@@ -24,6 +24,7 @@ async function cachedUsage() {
 }
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 const security = require('./lib/security');
+const notify = require('./lib/notify');
 
 ensureDir(DATA_DIR);
 ensureDir(pipeline.VIDEOS_DIR);
@@ -303,6 +304,9 @@ async function approveAndUpload(id, meta) {
       Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: now, thumbnailError }, error: null });
     }
     store.saveVideo(done);
+    const shownTitle = meta.title || done.title || 'Video';
+    if (scheduled) notify.notify('scheduled', `Scheduled: ${shownTitle}`, `Will become public on YouTube at ${publisher.istLabel(meta.publishAt)}.`, id);
+    else notify.notify('uploaded', `Uploaded: ${shownTitle}`, `Uploaded to YouTube as ${meta.privacy}.`, id);
     return true;
   } catch (e) {
     const failed = store.getVideo(id);
@@ -431,6 +435,8 @@ async function handleApi(req, res, url) {
       animation: { selected: animation.config().id, providers: animation.statuses() },
       storage: { configured: storage.isConfigured(), bucket: storage.status().bucket, source: storage.status().source, missing: storage.status().missing },
       youtube: await youtube.statusFresh(),
+      daily: daily.summary(),
+      notifications: store.listNotifications(8),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },
     });
   }
@@ -477,6 +483,7 @@ async function handleApi(req, res, url) {
   }
 
   /* Security events (what happened, never passwords, tokens or keys). Owner only. */
+  if (method === 'GET' && p === '/api/notifications') return json(res, 200, { notifications: store.listNotifications(50) });
   if (method === 'GET' && p === '/api/security/events') return json(res, 200, { events: security.recent(200) });
 
   /* Delete the app's data: every video (local and cloud copies), the music library and the YouTube connection.
@@ -678,7 +685,15 @@ server.listen(PORT, () => {
       updateVideo: (id, patch) => { const v = store.getVideo(id); if (v) { Object.assign(v, patch); store.saveVideo(v); } },
       getPublishState: youtube.getPublishState,
       retry: (id) => { const v = store.getVideo(id); return v && v.schedule && v.schedule.meta ? approveAndUpload(id, v.schedule.meta) : false; },
-    }).then((acts) => { for (const [a, id] of acts) console.log(`[schedule] ${a} ${id}`); })
+    }).then((acts) => {
+      for (const [a, id] of acts) {
+        console.log(`[schedule] ${a} ${id}`);
+        const v = store.getVideo(id);
+        const title = (v && (v.approval && v.approval.title || v.title)) || 'Video';
+        if (a === 'published') notify.notify('published', `Published: ${title}`, 'YouTube made this video public at its scheduled time.', id);
+        if (a === 'failed') notify.notify('failed', `Not published: ${title}`, (v && v.error) || 'YouTube did not make this video public.', id);
+      }
+    })
       .catch((e) => console.log(`[schedule] ${scrub(e.message)}`));
   }, 60 * 1000);
 });
