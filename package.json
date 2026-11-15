@@ -10,7 +10,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/animation.js && node test/tts.js && node test/daily.js && node test/daily-publish.js && node test/render.js && node test/schedule.js && node test/storage.js && node test/youtube-api.js && node test/smoke.js"
+    "test": "node test/animation.js && node test/tts.js && node test/daily.js && node test/daily-publish.js && node test/render.js && node test/schedule.js && node test/storage.js && node test/youtube-api.js && node test/youtube-channel.js && node test/smoke.js"
   },
   "dependencies": {}
 }

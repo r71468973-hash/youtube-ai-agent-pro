@@ -41,7 +41,7 @@ const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'same-origin',
-  'content-security-policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 
 function json(res, code, obj) {
@@ -399,7 +399,7 @@ async function handleApi(req, res, url) {
       ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },
       animation: { selected: animation.config().id, providers: animation.statuses() },
       storage: { configured: storage.isConfigured(), bucket: storage.status().bucket, source: storage.status().source, missing: storage.status().missing },
-      youtube: youtube.status(),
+      youtube: await youtube.statusFresh(),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },
     });
   }
@@ -427,7 +427,11 @@ async function handleApi(req, res, url) {
   }
 
   /* YouTube */
-  if (method === 'GET' && p === '/api/youtube/status') return json(res, 200, youtube.status());
+  if (method === 'GET' && p === '/api/youtube/status') return json(res, 200, await youtube.statusFresh());
+  if (method === 'POST' && p === '/api/youtube/refresh') {
+    if (!youtube.status().connected) return bad(res, 'YouTube is not connected.', 409);
+    try { return json(res, 200, { channel: await youtube.refreshChannel() }); } catch (e) { return bad(res, scrub(e.message).slice(0, 300), 502); }
+  }
   if (method === 'POST' && p === '/api/youtube/connect') {
     if (!youtube.isConfigured()) return bad(res, 'Add your Google OAuth client ID and secret in Settings first.');
     const a = youtube.authUrl();

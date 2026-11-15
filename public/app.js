@@ -187,7 +187,12 @@
 
     const ytCard = h('div', { class: 'card stack' },
       h('h3', {}, 'YouTube'),
-      yt.connected ? h('p', { class: 'notice ok' }, `Connected${yt.channel ? ': ' + yt.channel.title : ''}`) : h('p', { class: 'notice' }, yt.configured ? 'Not connected yet.' : 'First add your Google OAuth client ID and secret below.'),
+      yt.connected
+        ? h('p', { class: 'notice ok', role: 'status' }, h('span', { class: 'badge ok' }, 'Connected'), yt.channel ? ` ${yt.channel.title}` : '')
+        : h('p', { class: 'notice' }, yt.configured ? 'Not connected yet.' : 'First add your Google OAuth client ID and secret below.'),
+      yt.channelError ? h('p', { class: 'notice err' }, yt.channelError) : null,
+      yt.connected && yt.channel ? channelBlock(yt.channel) : null,
+      yt.connected && yt.channel ? h('p', { class: 'small muted' }, 'Uploads go only to this channel.') : null,
       h('p', { class: 'small muted' }, 'Redirect URI to register in Google Cloud Console:'),
       h('code', { class: 'small', style: 'word-break:break-all' }, yt.redirectUri),
       h('div', { class: 'row' },
@@ -340,7 +345,8 @@
       } catch (ex) { toast(ex.message, 7000); go.disabled = false; }
     } },
     h('h3', {}, 'Review and approve'),
-    !yt.connected ? h('p', { class: 'notice warn' }, 'Connect YouTube in Settings before you can upload.') : h('p', { class: 'small muted' }, `Channel: ${yt.channel ? yt.channel.title : 'connected'}. Nothing is uploaded until you tick the box and approve.`),
+    !yt.connected ? h('p', { class: 'notice warn' }, 'Connect YouTube in Settings before you can upload.')
+      : h('div', { class: 'card stack' }, h('strong', {}, 'This video will be uploaded to:'), yt.channel ? channelBlock(yt.channel) : h('span', { class: 'small' }, 'connected channel'), h('p', { class: 'small muted' }, 'Nothing is uploaded until you tick the box and approve.')),
     h('label', {}, 'YouTube title', h('input', { type: 'text', maxlength: 100, value: m.title, required: true, oninput: (e) => { m.title = e.target.value; } })),
     h('label', {}, 'Description', h('textarea', { style: 'min-height:90px', oninput: (e) => { m.description = e.target.value; } })),
     h('label', {}, 'Tags (comma separated)', h('input', { type: 'text', oninput: (e) => { m.tags = e.target.value; } })),
@@ -398,6 +404,17 @@
       h('h2', {}, 'Publishing queue'),
       h('p', { class: 'small muted' }, 'Times are India time (IST). YouTube makes a scheduled video public at its time, even when this app is switched off.'),
       list);
+  }
+
+  /* ------------------------------------------------------------------ YouTube channel */
+  /** Profile picture, name, channel ID and channel URL of the connected channel. */
+  function channelBlock(ch) {
+    return h('div', { class: 'row', style: 'align-items:center' },
+      ch.thumbnail ? h('img', { src: ch.thumbnail, alt: `Profile picture of ${ch.title}`, width: 56, height: 56, style: 'border-radius:50%', loading: 'lazy', referrerpolicy: 'no-referrer' }) : null,
+      h('div', { class: 'stack' },
+        h('strong', {}, ch.title),
+        h('span', { class: 'small muted' }, `Channel ID: ${ch.id}`),
+        h('a', { href: ch.url, target: '_blank', rel: 'noopener noreferrer' }, ch.url)));
   }
 
   /* ------------------------------------------------------------------ cloud storage */
