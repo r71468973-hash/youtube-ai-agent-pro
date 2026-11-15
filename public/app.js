@@ -357,11 +357,32 @@
 
   function queueRow(it) {
     const when = it.publishAt ? `Publishes ${istText(it.publishAt)}` : (it.publishedAt ? `Published ${istText(it.publishedAt)}` : '');
+    // Changing the time only works while YouTube still holds the video privately; the server checks that.
+    const reschedule = async (publishAt, msg) => {
+      try { await api('POST', `/api/videos/${it.id}/reschedule`, { publishAt, publicAtTimeConsent: true }); toast(msg); render(); } catch (e) { toast(e.message, 6000); }
+    };
+    const when2 = h('input', { type: 'datetime-local', 'aria-label': 'New publish time (India time)' });
+    const editBox = h('div', { class: 'row', hidden: true }, when2, h('button', { class: 'btn', type: 'button', onclick: () => {
+      if (!when2.value) return toast('Choose a date and time (India time).');
+      if (!confirm(`Change the publish time to ${when2.value} IST? The video becomes public on YouTube at that time.`)) return;
+      reschedule(when2.value, 'Publish time changed.');
+    } }, 'Save time'));
+    const controls = it.status === 'scheduled' ? [
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => {
+          if (!confirm('Publish now? This video becomes public on YouTube in about 3 minutes.')) return;
+          reschedule(new Date(Date.now() + 180000).toISOString(), 'Will publish in about 3 minutes.');
+        } }, 'Publish now'),
+        h('button', { class: 'btn', type: 'button', onclick: () => { editBox.hidden = !editBox.hidden; } }, 'Edit time')),
+      editBox,
+    ] : [];
     return h('div', { class: 'card stack' },
       h('div', { class: 'row' }, badge(it.status), h('strong', {}, it.title)),
       when ? h('p', { class: 'small' }, when) : null,
       it.attempts ? h('p', { class: 'small muted' }, `Upload attempts: ${it.attempts}`) : null,
       it.error ? h('p', { class: 'notice err' }, it.error) : null,
+      it.thumbnailError ? h('p', { class: 'notice warn' }, `Thumbnail not set on YouTube: ${it.thumbnailError}`) : null,
+      ...controls,
       it.url ? h('a', { href: it.url, target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube') : null);
   }
 

@@ -278,16 +278,22 @@ async function approveAndUpload(id, meta) {
       file, title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy,
       isShort: v.format === 'shorts', publishAt: meta.publishAt || null,
     });
+    // Custom thumbnail. The video is already on YouTube, so a refused thumbnail is recorded, never a failed upload.
+    let thumbnailError = null;
+    const thumbFile = path.join(pipeline.videoDir(id), 'thumb.jpg');
+    if (fs.existsSync(thumbFile)) {
+      try { await youtube.setThumbnail(r.videoId, thumbFile); } catch (te) { thumbnailError = scrub(te.message).slice(0, 200); }
+    }
     const done = store.getVideo(id);
     if (scheduled) {
       // YouTube holds the video privately until publishAt, then makes it public itself.
       Object.assign(done, {
         status: 'scheduled', error: null,
-        youtube: { videoId: r.videoId, url: r.url, privacy: 'scheduled', uploadedAt: now },
+        youtube: { videoId: r.videoId, url: r.url, privacy: 'scheduled', uploadedAt: now, thumbnailError },
         schedule: { publishAt: meta.publishAt, pending: false, attempts: prevAttempts + 1, lastAttemptAt: now, meta: scheduleMeta },
       });
     } else {
-      Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: now }, error: null });
+      Object.assign(done, { status: 'published', youtube: { videoId: r.videoId, url: r.url, privacy: meta.privacy, uploadedAt: now, thumbnailError }, error: null });
     }
     store.saveVideo(done);
     return true;
@@ -468,6 +474,7 @@ async function handleApi(req, res, url) {
         url: v.youtube && v.youtube.url ? v.youtube.url : null,
         attempts: v.schedule ? v.schedule.attempts || 0 : 0,
         error: v.error || null,
+        thumbnailError: (v.youtube && v.youtube.thumbnailError) || null,
       }))
       .sort((a, b) => (a.publishAt || a.publishedAt || '9999').localeCompare(b.publishAt || b.publishedAt || '9999'));
     return json(res, 200, { items, now: new Date().toISOString() });
@@ -480,7 +487,7 @@ async function handleApi(req, res, url) {
     return json(res, 202, { video: publicVideo(v) });
   }
 
-  m = /^\/api\/videos\/([a-f0-9]+)(?:\/(file|thumb|retry|approve|reject))?$/.exec(p);
+  m = /^\/api\/videos\/([a-f0-9]+)(?:\/(file|thumb|retry|approve|reject|reschedule))?$/.exec(p);
   if (m) {
     const v = store.getVideo(m[1]);
     if (!v) return bad(res, 'Video not found.', 404);
@@ -504,6 +511,21 @@ async function handleApi(req, res, url) {
       return bad(res, 'File not available.', 404);
     }
     if (action === 'thumb' && method === 'GET') return serveFileWithRange(req, res, path.join(pipeline.videoDir(v.id), 'thumb.jpg'), 'image/jpeg');
+
+    // Change the publish time of a video that is still private and scheduled on YouTube ("Edit time" / "Publish now").
+    if (action === 'reschedule' && method === 'POST') {
+      const b = await readJson(req);
+      if (v.status !== 'scheduled' || !v.youtube || !v.youtube.videoId) return bad(res, 'Only a scheduled video can change its time.', 409);
+      if (b.publicAtTimeConsent !== true) return bad(res, 'Confirm that the video becomes public on YouTube at the new time.', 400);
+      let when;
+      try { when = publisher.toUtcPublishAt(String(b.publishAt || '')); } catch (e) { return bad(res, e.message, e.code || 400); }
+      const state = await youtube.getPublishState(v.youtube.videoId);
+      if (state.privacyStatus !== 'private') return bad(res, 'YouTube already made this video public, so its time can no longer change.', 409);
+      await youtube.updatePublishAt(v.youtube.videoId, when);
+      v.schedule = { ...(v.schedule || {}), publishAt: when, pending: false, meta: { ...((v.schedule && v.schedule.meta) || {}), publishAt: when } };
+      store.saveVideo(v);
+      return json(res, 200, { ok: true, publishAt: when });
+    }
 
     if (action === 'retry' && method === 'POST') {
       if (!['failed', 'ready'].includes(v.status)) return bad(res, 'This video cannot be regenerated right now.', 409);
