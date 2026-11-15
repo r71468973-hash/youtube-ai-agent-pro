@@ -144,6 +144,16 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
       assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("3D thumbnail created");
     }
 
+    // --- playback from cloud: with the local copy gone, the video is sent from the bucket, not a 404
+    const localMp4 = path.join(DATA, 'videos', va.id, 'video.mp4');
+    const kept = localMp4 + '.kept';
+    fs.renameSync(localMp4, kept);
+    try {
+      const cloudPlay = await fetch(`${BASE}/api/videos/${va.id}/file`, { headers: { cookie }, redirect: 'manual' });
+      assert.strictEqual(cloudPlay.status, 302, 'no redirect to cloud: ' + cloudPlay.status);
+      assert(cloudPlay.headers.get('location').includes('smoke-bucket')); ok('video plays from cloud storage when the local copy is gone');
+    } finally { fs.renameSync(kept, localMp4); }
+
     // --- range requests
     const rng = await fetch(`${BASE}/api/videos/${va.id}/file`, { headers: { cookie, range: 'bytes=0-99' } });
     assert.strictEqual(rng.status, 206); ok('video streaming supports Range');

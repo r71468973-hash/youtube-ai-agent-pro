@@ -83,7 +83,7 @@ const clientIp = (req) => security.clientIp(req);
 
 function publicVideo(v) {
   const { story, scenes, ...rest } = v;
-  return { ...rest, storyPreview: String(story || '').slice(0, 160), sceneCount: (scenes || []).length, hasFile: fs.existsSync(path.join(pipeline.videoDir(v.id), 'video.mp4')), inCloud: !!v.cloud };
+  return { ...rest, storyPreview: String(story || '').slice(0, 160), sceneCount: (scenes || []).length, hasFile: fs.existsSync(path.join(pipeline.videoDir(v.id), 'video.mp4')), inCloud: !!v.cloud, cloudUrl: (v.cloud && v.cloud.url) || null };
 }
 const fullVideo = (v) => ({ ...publicVideo(v), story: v.story, scenes: v.scenes || [] });
 
@@ -569,6 +569,11 @@ async function handleApi(req, res, url) {
     if (action === 'file' && method === 'GET') {
       const f = path.join(pipeline.videoDir(v.id), 'video.mp4');
       if (fs.existsSync(f)) return serveFileWithRange(req, res, f, 'video/mp4', url.searchParams.has('download') ? `${v.id}.mp4` : null);
+      // The local copy is used when it exists. Otherwise the saved permanent link, then a temporary link as a fallback.
+      if (v.cloud && v.cloud.url) {
+        res.writeHead(302, { location: v.cloud.url, 'cache-control': 'no-store' });
+        return res.end();
+      }
       if (v.cloud) {
         res.writeHead(302, { location: storage.presignGet(v.cloud.key), 'cache-control': 'no-store' });
         return res.end();
