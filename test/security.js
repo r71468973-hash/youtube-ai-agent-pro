@@ -224,6 +224,15 @@ function walk(dir) {
     assert.strictEqual((await call('GET', '/api/videos/not-a-real-id')).status, 404);
     ok('bad input (short story, out-of-range hour, malformed video id) is refused');
 
+    // 9b. Google sign-in callback: refused without a dashboard session, and refused when the state does not match.
+    const cbNoSession = await call('GET', '/auth/google/callback?code=abc&state=xyz', undefined, { noCookie: true });
+    assert.strictEqual(cbNoSession.status, 302);
+    assert(/youtube=error/.test(cbNoSession.headers.get('location') || ''));
+    const cbBadState = await call('GET', '/auth/google/callback?code=abc&state=not-the-saved-state');
+    assert.strictEqual(cbBadState.status, 302);
+    assert(/youtube=error/.test(cbBadState.headers.get('location') || '') && /did%20not%20match|did\+not\+match/.test(cbBadState.headers.get('location')));
+    ok('the Google callback is refused without a dashboard session, and when the sign-in state does not match');
+
     // 10. Path traversal is blocked.
     assert.strictEqual((await fetch(`${BASE}/..%2Fserver.js`)).status, 404);
     assert.strictEqual((await fetch(`${BASE}/%2e%2e%2fserver.js`)).status, 404);
