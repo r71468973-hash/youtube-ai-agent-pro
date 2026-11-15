@@ -335,10 +335,13 @@
     return h('form', { class: 'card stack', onsubmit: async (e) => {
       e.preventDefault();
       if (!m.ok) return;
+      // Public right away needs its own explicit confirmation (the server checks publicNowConsent too).
+      if (m.privacy === 'public' && !m.publishAt && !confirm('Make this video PUBLIC on YouTube now? Anyone can watch it as soon as it is uploaded.')) return;
       go.disabled = true;
       try {
         const body = { confirm: true, title: m.title, description: m.description, tags: m.tags, privacy: m.privacy };
         if (m.publishAt) Object.assign(body, { publishAt: m.publishAt, publicAtTimeConsent: m.consent });
+        else if (m.privacy === 'public') body.publicNowConsent = true;
         await api('POST', `/api/videos/${v.id}/approve`, body);
         toast(m.publishAt ? 'Scheduled. YouTube will publish it at the chosen India time.' : 'Approved. Uploading to YouTube…');
         await refreshVideos();

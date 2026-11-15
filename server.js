@@ -23,6 +23,7 @@ async function cachedUsage() {
   return value;
 }
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
+const security = require('./lib/security');
 
 ensureDir(DATA_DIR);
 ensureDir(pipeline.VIDEOS_DIR);
@@ -37,11 +38,17 @@ const MUSIC_BUILTIN = [
   { id: 'ambient-bright', name: 'Bright ambient (built-in)' },
 ];
 
+// HSTS only over HTTPS (Railway serves the app over HTTPS, so the header is sent in production).
+const HSTS = BASE_URL.startsWith('https://') ? { 'strict-transport-security': 'max-age=31536000; includeSubDomains' } : {};
 const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'same-origin',
-  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  ...HSTS,
 };
 
 function json(res, code, obj) {
@@ -69,7 +76,7 @@ async function readJson(req) {
   try { return JSON.parse(buf.toString('utf8')); } catch { throw Object.assign(new Error('Invalid JSON'), { code: 400 }); }
 }
 
-const clientIp = (req) => req.socket.remoteAddress || 'unknown';
+const clientIp = (req) => security.clientIp(req);
 
 /* -------------------------------------------------------------- serializers */
 
@@ -333,6 +340,10 @@ function validateApproval(b) {
     if (b.publicAtTimeConsent !== true) throw Object.assign(new Error('Tick the box to confirm the video becomes public on YouTube at that time.'), { code: 400 });
     return { title, description, tags, privacy: 'public', publishAt };
   }
+  // Public right away is its own explicit choice: the owner must confirm it, separately from the approval.
+  if (privacy === 'public' && b.publicNowConsent !== true) {
+    throw Object.assign(new Error('Confirm that this video becomes public on YouTube now. Otherwise choose Private or Unlisted.'), { code: 400 });
+  }
   return { title, description, tags, privacy, publishAt: null };
 }
 
@@ -342,21 +353,41 @@ async function handleApi(req, res, url) {
   const method = req.method;
   const p = url.pathname;
 
+  // General limit on the API: a runaway client or scanner is slowed down before it reaches the work.
+  const ip = clientIp(req);
+  if (security.overLimit(`api:${ip}`, 300, 60 * 1000)) {
+    security.event('rate_limited', { ip, method, path: p });
+    return bad(res, 'Too many requests. Slow down and try again in a minute.', 429);
+  }
+
   if (method === 'POST' && p === '/api/login') {
-    const ip = clientIp(req);
-    if (auth.throttled(ip)) return bad(res, 'Too many attempts. Try again in a few minutes.', 429);
+    if (auth.throttled(ip)) {
+      security.event('login_throttled', { ip });
+      return bad(res, 'Too many attempts. Try again in a few minutes.', 429);
+    }
     const b = await readJson(req);
-    if (!auth.checkPassword(String(b.password || ''))) { auth.noteFailure(ip); return bad(res, 'Wrong password.', 401); }
+    if (!auth.checkPassword(String(b.password || ''))) {
+      auth.noteFailure(ip);
+      security.event('login_failed', { ip });
+      return bad(res, 'Wrong password.', 401);
+    }
     const csrf = auth.startSession(res);
+    security.event('login_ok', { ip });
     return json(res, 200, { ok: true, csrf });
   }
 
   const session = auth.getSession(req);
   if (p === '/api/session') return json(res, 200, session ? { authenticated: true, csrf: session.csrf } : { authenticated: false });
-  if (!session) return bad(res, 'Please sign in.', 401);
+  if (!session) {
+    security.event('unauthorized_api', { ip, method, path: p });
+    return bad(res, 'Please sign in.', 401);
+  }
 
   if (method !== 'GET' && method !== 'HEAD') {
-    if (!safeEqual(req.headers['x-csrf-token'] || '', session.csrf)) return bad(res, 'Invalid CSRF token. Reload the page.', 403);
+    if (!safeEqual(req.headers['x-csrf-token'] || '', session.csrf)) {
+      security.event('csrf_rejected', { ip, method, path: p });
+      return bad(res, 'Invalid CSRF token. Reload the page.', 403);
+    }
   }
 
   if (method === 'POST' && p === '/api/logout') { auth.endSession(res); return json(res, 200, { ok: true }); }
@@ -436,9 +467,32 @@ async function handleApi(req, res, url) {
     if (!youtube.isConfigured()) return bad(res, 'Add your Google OAuth client ID and secret in Settings first.');
     const a = youtube.authUrl();
     res.setHeader('Set-Cookie', auth.cookieHeader('aiv_oauth', auth.signShort({ state: a.state, verifier: a.verifier }, 10 * 60 * 1000), 600));
+    security.event('youtube_connect_started', { ip: clientIp(req) });
     return json(res, 200, { url: a.url });
   }
-  if (method === 'POST' && p === '/api/youtube/disconnect') { await youtube.disconnect(); return json(res, 200, { ok: true }); }
+  if (method === 'POST' && p === '/api/youtube/disconnect') {
+    await youtube.disconnect();
+    security.event('youtube_disconnected', { ip: clientIp(req) });
+    return json(res, 200, { ok: true });
+  }
+
+  /* Security events (what happened, never passwords, tokens or keys). Owner only. */
+  if (method === 'GET' && p === '/api/security/events') return json(res, 200, { events: security.recent(200) });
+
+  /* Delete the app's data: every video (local and cloud copies), the music library and the YouTube connection.
+     API keys and settings are kept; the security log is kept as the record of what happened. Needs the exact phrase. */
+  if (method === 'POST' && p === '/api/account/erase') {
+    const b = await readJson(req);
+    if (b.confirm !== 'DELETE MY DATA') return bad(res, 'Type DELETE MY DATA to confirm. Nothing was deleted.', 400);
+    if (store.listVideos().some((v) => ['queued', 'generating', 'uploading'].includes(v.status))) return bad(res, 'Wait until the current video step finishes, then try again.', 409);
+    const videos = store.listVideos();
+    for (const v of videos) { pipeline.deleteArtifacts(v.id); store.deleteVideo(v.id); }
+    for (const t of store.listMusic()) { fs.rmSync(t.file, { force: true }); store.deleteMusic(t.id); }
+    await youtube.disconnect();
+    usageCache = null;
+    security.event('account_erased', { ip: clientIp(req), videos: videos.length });
+    return json(res, 200, { ok: true, videosDeleted: videos.length });
+  }
 
   /* Music library */
   if (method === 'GET' && p === '/api/music') return json(res, 200, { music: store.listMusic().map(({ file, ...r }) => r) });
@@ -552,6 +606,7 @@ async function handleApi(req, res, url) {
       const yt = youtube.status();
       if (!yt.connected) return bad(res, 'Connect your YouTube account first.', 409);
       const meta = validateApproval(await readJson(req));
+      security.event('upload_approved', { ip: clientIp(req), videoId: v.id, privacy: meta.privacy, scheduled: !!meta.publishAt, channel: yt.channel ? yt.channel.id : null });
       approveAndUpload(v.id, meta); // runs in background; UI polls status
       return json(res, 202, { video: publicVideo(store.getVideo(v.id)) });
     }
