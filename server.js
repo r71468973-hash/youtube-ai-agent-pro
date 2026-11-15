@@ -15,6 +15,13 @@ const daily = require('./lib/daily');
 const publisher = require('./lib/publisher');
 const { generateHindiStory } = require('./lib/story');
 const uploading = new Set(); // video ids with an upload in progress (never two at once)
+let usageCache = null; // cloud usage is listed at most once a minute (the dashboard polls)
+async function cachedUsage() {
+  if (usageCache && Date.now() - usageCache.at < 60000) return usageCache.value;
+  const value = await storage.usage();
+  usageCache = { at: Date.now(), value };
+  return value;
+}
 const { ensureDir, newId, safeEqual, scrub } = require('./lib/util');
 
 ensureDir(DATA_DIR);
@@ -320,6 +327,36 @@ async function handleApi(req, res, url) {
 
   if (method === 'POST' && p === '/api/logout') { auth.endSession(res); return json(res, 200, { ok: true }); }
 
+  /* Cloud storage (Cloudflare R2). Status, connection test and cleanup need the admin login. */
+  if (method === 'GET' && p === '/api/storage') {
+    const st = storage.status();
+    let usage = null;
+    let usageError = null;
+    if (st.configured) {
+      try { usage = await cachedUsage(); } catch (e) { usageError = scrub(e.message).slice(0, 300); }
+    }
+    return json(res, 200, { ...st, usage, usageError });
+  }
+  if (method === 'POST' && p === '/api/storage/test') {
+    if (!storage.isConfigured()) return bad(res, `Cloud storage is not configured. Missing: ${storage.status().missing.join(', ')}`, 409);
+    const r = await storage.testConnection();
+    usageCache = null;
+    return json(res, r.ok ? 200 : 502, r);
+  }
+  if (method === 'POST' && p === '/api/storage/cleanup') {
+    const b = await readJson(req);
+    if (b.confirm !== true) return bad(res, 'Confirm before deleting cloud files.', 400);
+    const days = Number(b.olderThanDays);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) return bad(res, 'olderThanDays must be a whole number from 1 to 3650.', 400);
+    const cutoff = Date.now() - days * 86400000;
+    // Only videos saved to cloud, older than the cutoff, not mid-job, and not published to YouTube (kept for their record).
+    const old = store.listVideos().filter((v) => v.cloud && v.cloud.saved && !['queued', 'generating', 'uploading'].includes(v.status)
+      && !(v.youtube && v.youtube.videoId) && Date.parse(v.createdAt) < cutoff);
+    for (const v of old) { pipeline.deleteArtifacts(v.id); store.deleteVideo(v.id); }
+    usageCache = null;
+    return json(res, 200, { deleted: old.length });
+  }
+
   if (method === 'GET' && p === '/api/overview') {
     const tts = providers.pickTtsProvider();
     return json(res, 200, {
@@ -327,7 +364,7 @@ async function handleApi(req, res, url) {
       tts: tts || null,
       ai: { scenes: vault.has('ANTHROPIC_API_KEY'), images: store.getSettings().imageMode === 'ai' && vault.has('OPENAI_API_KEY') },
       animation: { selected: animation.config().id, providers: animation.statuses() },
-      storage: { configured: storage.isConfigured() },
+      storage: { configured: storage.isConfigured(), bucket: storage.status().bucket, source: storage.status().source, missing: storage.status().missing },
       youtube: youtube.status(),
       limits: { storyMin: LIMITS.storyMin, storyMax: LIMITS.storyMax },
     });
@@ -509,6 +546,10 @@ process.on('unhandledRejection', (e) => console.error('[process] unhandled rejec
 
 server.listen(PORT, () => {
   console.log(`AI Video Studio running at ${BASE_URL}`);
+  const sst = storage.status();
+  console.log(sst.configured
+    ? `Cloud storage: connected to bucket "${sst.bucket}" (${sst.source} settings)`
+    : `Cloud storage: NOT configured (missing ${sst.missing.join(', ')}). Videos stay on this server only.`);
   const pw = auth.adminPassword();
   if (auth.wasGenerated()) console.log(`No ADMIN_PASSWORD set. Generated one and saved it to ${path.join(DATA_DIR, '.admin_password')}`);
   if (!process.env.ADMIN_PASSWORD) console.log('Set ADMIN_PASSWORD in the environment to choose your own login password.');

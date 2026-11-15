@@ -20,7 +20,7 @@
     return el;
   }
   const svg = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(s.namespaceURI, 'path'); p.setAttribute('d', d); s.append(p); return s; };
-  const ICONS = { create: 'M12 5v14M5 12h14', library: 'M4 6h16M4 12h16M4 18h10', queue: 'M4 7h16M4 12h10M4 17h7', settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z' };
+  const ICONS = { create: 'M12 5v14M5 12h14', library: 'M4 6h16M4 12h16M4 18h10', queue: 'M4 7h16M4 12h10M4 17h7', cloud: 'M7 18a4.5 4.5 0 110-9 6 6 0 0111.7 1.5A4 4 0 0118 18z', settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z' };
 
   function toast(msg, ms = 4000) {
     const t = h('div', { class: 'toast' }, msg);
@@ -92,7 +92,7 @@
   }
 
   function shell(content) {
-    const tabs = [['create', 'Create'], ['library', 'Videos'], ['queue', 'Queue'], ['settings', 'Settings']];
+    const tabs = [['create', 'Create'], ['library', 'Videos'], ['queue', 'Queue'], ['cloud', 'Cloud'], ['settings', 'Settings']];
     const go = (v) => () => { state.view = v; render(); window.scrollTo(0, 0); };
     const waiting = state.videos.filter((v) => v.status === 'ready').length;
     return h('div', { class: 'shell' },
@@ -364,10 +364,104 @@
       list);
   }
 
+  /* ------------------------------------------------------------------ cloud storage */
+  const bytesText = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
+
+  function viewCloud() {
+    const body = h('div', { class: 'stack', 'aria-live': 'polite' }, h('p', { class: 'small muted' }, 'Checking cloud storage…'));
+    const load = () => {
+      body.replaceChildren(h('p', { class: 'small muted' }, 'Checking cloud storage…'));
+      api('GET', '/api/storage').then((s) => body.replaceChildren(...cloudPanels(s, load))).catch((e) => body.replaceChildren(h('p', { class: 'notice err' }, e.message)));
+    };
+    load();
+    return h('div', { class: 'stack' },
+      h('h2', {}, 'Cloud storage'),
+      h('p', { class: 'small muted' }, 'Finished videos are saved to Cloudflare R2 and confirmed in the bucket before they count as saved.'),
+      body);
+  }
+
+  function cloudPanels(s, reload) {
+    const out = [];
+    const u = s.usage;
+    if (!s.configured) {
+      out.push(h('p', { class: 'notice warn' }, 'Cloud storage is NOT connected. New videos stay on this server only. Add the R2 variables in Railway: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_ENDPOINT.'));
+      if (s.missing.length) out.push(h('p', { class: 'small muted' }, `Missing: ${s.missing.join(', ')}`));
+    }
+    out.push(h('div', { class: 'card stack' },
+      h('h3', {}, 'Connection'),
+      statusLine('Status', !s.configured ? 'Not connected' : s.usageError ? 'Connected, but the bucket could not be read' : 'Connected', s.configured && !s.usageError),
+      statusLine('Bucket', s.bucket || '–', !!s.bucket),
+      statusLine('Endpoint', s.endpointHost || '–', !!s.endpointHost),
+      statusLine('Configured from', s.source === 'environment' ? 'Railway variables' : (s.source || '–'), !!s.configured)));
+
+    if (u) {
+      const pct = Math.min(100, Math.round((u.bytes / u.freeTierBytes) * 100));
+      const row = (label, n) => h('div', { class: 'row' }, h('strong', {}, label), h('span', {}, String(n)));
+      out.push(h('div', { class: 'card stack' },
+        h('h3', {}, 'Storage usage'),
+        h('p', {}, h('strong', {}, bytesText(u.bytes)), ` of ${bytesText(u.freeTierBytes)} free tier (${pct}%)`),
+        h('progress', { max: 100, value: pct, 'aria-label': 'Share of free storage used' }),
+        row('Uploaded videos', u.counts.videos),
+        row('Audio files', u.counts.audio),
+        row('Thumbnails', u.counts.thumbnails),
+        row('Subtitle files', u.counts.subtitles),
+        row('Scene images', u.counts.images),
+        row('Metadata files', u.counts.metadata),
+        row('Total files', u.objects),
+        ...u.warnings.map((w) => h('p', { class: 'notice warn' }, w)),
+        h('p', { class: 'small muted' }, 'Monthly request counts are shown in your Cloudflare dashboard, not here.')));
+    } else if (s.usageError) {
+      out.push(h('p', { class: 'notice err' }, `Could not read the bucket: ${s.usageError}`));
+    }
+
+    out.push(h('div', { class: 'card stack' },
+      h('h3', {}, 'Upload errors'),
+      (s.recentErrors || []).length
+        ? s.recentErrors.map((e) => h('p', { class: 'small' }, h('strong', {}, `${new Date(e.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} · ${e.where}: `), e.message))
+        : h('p', { class: 'small muted' }, 'No storage errors recorded since the server started.')));
+
+    const result = h('div', { class: 'stack', 'aria-live': 'polite' });
+    const testBtn = h('button', {
+      class: 'btn primary', type: 'button', disabled: !s.configured,
+      onclick: async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        result.replaceChildren(h('p', { class: 'small muted' }, 'Running the test…'));
+        try {
+          const r = await api('POST', '/api/storage/test');
+          result.replaceChildren(h('p', { class: 'notice ok' }, 'Test passed: uploaded, confirmed, downloaded, compared and deleted the test file.'), h('ol', { class: 'small' }, ...r.steps.map((t) => h('li', {}, t))));
+        } catch (ex) {
+          result.replaceChildren(h('p', { class: 'notice err' }, `Test failed: ${ex.message}`));
+        }
+        b.disabled = !s.configured;
+      },
+    }, 'Test connection');
+    const days = h('input', { type: 'number', min: 1, max: 3650, value: 30, 'aria-label': 'Days' });
+    const cleanBtn = h('button', {
+      class: 'btn danger', type: 'button', disabled: !s.configured,
+      onclick: async () => {
+        const n = Number(days.value);
+        if (!confirm(`Delete videos saved to cloud more than ${n} days ago? Their cloud files and local copies are removed. Videos already on YouTube are kept.`)) return;
+        try {
+          const r = await api('POST', '/api/storage/cleanup', { olderThanDays: n, confirm: true });
+          toast(`Deleted ${r.deleted} old video(s)`);
+          reload();
+        } catch (ex) { toast(ex.message, 6000); }
+      },
+    }, 'Delete old files');
+    out.push(h('div', { class: 'card stack' },
+      h('h3', {}, 'Actions'),
+      h('div', { class: 'row' }, testBtn, h('button', { class: 'btn', type: 'button', onclick: reload }, 'Refresh')),
+      result,
+      h('label', {}, 'Delete videos saved to cloud older than (days)', days),
+      cleanBtn));
+    return out;
+  }
+
   /* ------------------------------------------------------------------ main */
   function render() {
     if (!state.csrf) return renderLogin();
-    const views = { create: viewCreate, library: viewLibrary, queue: viewQueue, settings: viewSettings };
+    const views = { create: viewCreate, library: viewLibrary, queue: viewQueue, cloud: viewCloud, settings: viewSettings };
     $app.replaceChildren(shell(views[state.view]()));
   }
 

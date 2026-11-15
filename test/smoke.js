@@ -10,7 +10,7 @@ const PORT = 3900 + Math.floor(Math.random() * 90);
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'aivideo-'));
 const BASE = `http://localhost:${PORT}`;
 const env = { ...process.env, PORT: String(PORT), DATA_DIR: DATA, ADMIN_PASSWORD: 'test-pass-123', BASE_URL: BASE, APP_SECRET: 'x'.repeat(32) };
-for (const k of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'ELEVENLABS_API_KEY', 'GOOGLE_TTS_API_KEY', 'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']) delete env[k];
+for (const k of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'ELEVENLABS_API_KEY', 'GOOGLE_TTS_API_KEY', 'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'R2_ENDPOINT']) delete env[k];
 
 let cookie = '';
 let csrf = '';
@@ -42,6 +42,10 @@ let passed = 0;
 const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
 
 (async () => {
+  // Cloud storage points at a local S3-compatible mock (not R2), so finished videos really upload and are verified.
+  const { startMockS3 } = require('./mock-s3');
+  const mock = await startMockS3({ accessKey: 'smoke-key' });
+  Object.assign(env, { R2_ACCESS_KEY_ID: 'smoke-key', R2_SECRET_ACCESS_KEY: 'smoke-secret-value', R2_ENDPOINT: mock.url, R2_BUCKET_NAME: 'smoke-bucket' });
   const srv = spawn('node', ['server.js'], { env, cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   srv.stdout.on('data', (d) => { log += d; });
@@ -99,6 +103,12 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     assert(sa.some((s) => s.codec_type === 'audio')); ok('audio track present (music bed)');
     assert(va.warnings.some((w) => /text-to-speech/.test(w))); ok('missing TTS key reported honestly');
     assert(fs.existsSync(path.join(DATA, 'videos', va.id, 'thumb.jpg'))); ok('thumbnail created');
+    // --- cloud storage: saved to the bucket, each file confirmed in the bucket
+    assert.strictEqual(va.cloud && va.cloud.saved, true, 'not saved to cloud: ' + JSON.stringify(va.cloud)); ok('Short saved to cloud storage and confirmed');
+    const kinds = va.cloud.files.map((f) => f.kind);
+    for (const k of ['video', 'thumbnail', 'metadata']) assert(kinds.includes(k), 'missing cloud file: ' + k); ok('video, thumbnail and metadata saved to cloud');
+    assert(va.cloud.files.every((f) => mock.objects('smoke-bucket').has(f.key))); ok('every saved file is in the bucket');
+    assert(!va.warnings.some((w) => /NOT saved to cloud/.test(w))); ok('no false "not saved" warning');
 
     const vb = await waitFor(b.data.video.id);
     assert.strictEqual(vb.status, 'ready', 'long failed: ' + vb.error); ok('Hindi long video generated');
@@ -153,6 +163,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     process.exitCode = 1;
   } finally {
     srv.kill();
+    mock.close().catch(() => {});
     fs.rmSync(DATA, { recursive: true, force: true });
   }
 })();

@@ -60,7 +60,16 @@ Note: uploads from unverified Google API projects are forced to *private* by You
 
 ### Cloud storage
 
-In **Settings > Cloud storage** enter endpoint, bucket and region, and save the access key ID and secret under API keys. Each finished video is copied to the bucket; downloads fall back to a time-limited signed URL if the local file is gone.
+Cloudflare R2 (S3-compatible) is set with Railway environment variables. Never put these values in code or in git:
+
+- `R2_ACCOUNT_ID`: your Cloudflare account ID (the endpoint is built from it)
+- `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`: an R2 API token with Object Read & Write on the bucket
+- `R2_BUCKET_NAME`: the bucket, `youtube-ai-agent-storage`
+- `R2_ENDPOINT` (optional): `https://<account>.r2.cloudflarestorage.com`, if you do not set `R2_ACCOUNT_ID`
+
+Each finished video is uploaded under `YYYY/MM/DD/<videoId>/` with `video.mp4`, `thumb.jpg`, `voice.m4a`, `subtitles.ass` and `metadata.json`. A file counts as saved only after the bucket confirms it at the same size. Open the **Cloud** tab to test the connection, see usage against the 10 GB free tier, read upload errors, and delete old files.
+
+If the R2 variables are missing or the bucket fails, videos stay on the server and the video shows a warning that says it is NOT in the cloud. The older Settings page (S3-compatible endpoint plus vault keys) still works when no R2 variable is set.
 
 ### Security notes
 
