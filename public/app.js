@@ -189,7 +189,8 @@
       h('h3', {}, 'YouTube'),
       yt.connected
         ? h('p', { class: 'notice ok', role: 'status' }, h('span', { class: 'badge ok' }, 'Connected'), yt.channel ? ` ${yt.channel.title}` : '')
-        : h('p', { class: 'notice' }, yt.configured ? 'Not connected yet.' : 'First add your Google OAuth client ID and secret below.'),
+        : h('p', { class: 'notice' }, yt.configured ? 'Not connected yet.' : 'Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET in Railway, or add them below.'),
+      yt.configured ? h('p', { class: 'small muted' }, `OAuth client read from: ${yt.credentialsFrom === 'environment' ? 'Railway environment variables' : 'Settings (saved in the encrypted vault)'}`) : null,
       yt.channelError ? h('p', { class: 'notice err' }, yt.channelError) : null,
       yt.connected && yt.channel ? channelBlock(yt.channel) : null,
       yt.connected && yt.channel ? h('p', { class: 'small muted' }, 'Uploads go only to this channel.') : null,

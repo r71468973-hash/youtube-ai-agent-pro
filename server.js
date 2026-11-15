@@ -566,7 +566,7 @@ async function handleOAuthCallback(req, res, url) {
     res.end();
   };
   if (!auth.getSession(req)) return page('Please sign in to the dashboard first, then connect again.', false);
-  if (url.searchParams.get('error')) return page(`Google: ${url.searchParams.get('error')}`, false);
+  if (url.searchParams.get('error')) return page(youtube.oauthErrorMessage(url.searchParams.get('error'), url.searchParams.get('error_description')), false);
   const saved = auth.verify(auth.parseCookies(req).aiv_oauth);
   const state = url.searchParams.get('state') || '';
   const code = url.searchParams.get('code');
