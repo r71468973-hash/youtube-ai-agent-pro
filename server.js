@@ -136,17 +136,17 @@ function createJob(input) {
 
 function validateCreate(b) {
   let story = cleanText(b.story, LIMITS.storyMax);
-  const mode = b.mode === 'animated-3d' ? 'animated-3d' : 'classic';
-  // Empty story + 3D + Hindi: write an original Hindi story offline (no paid API).
-  const autoStory = !story && mode === 'animated-3d' && b.language === 'hi';
+  // Only 2D cartoon videos are made. Older requests that name another style are refused, not silently changed.
+  if (b.mode !== undefined && b.mode !== '2d-cartoon') throw Object.assign(new Error('Only 2D cartoon videos can be made.'), { code: 400 });
+  const mode = '2d-cartoon';
+  // Empty story + Hindi: write an original Hindi story offline (no paid API).
+  const autoStory = !story && b.language === 'hi';
   if (autoStory) story = generateHindiStory();
   if (story.length < LIMITS.storyMin) throw Object.assign(new Error(`Story must be at least ${LIMITS.storyMin} characters.`), { code: 400 });
   if (!['hi', 'en'].includes(b.language)) throw Object.assign(new Error('Language must be "hi" or "en".'), { code: 400 });
   if (!FORMATS[b.format]) throw Object.assign(new Error('Format must be "shorts" or "long".'), { code: 400 });
-  if (mode === 'animated-3d') {
-    const st = animation.current();
-    if (!st || !st.ok) throw Object.assign(new Error(`3D animation is not available: ${st ? st.reason : 'unknown provider'}`), { code: 409 });
-  }
+  const st = animation.current();
+  if (!st || !st.ok) throw Object.assign(new Error(`2D cartoon renderer is not available: ${st ? st.reason : 'unknown renderer'}`), { code: 409 });
   const music = String(b.music || 'none');
   if (music.startsWith('upload:')) {
     if (!store.getMusic(music.slice(7))) throw Object.assign(new Error('Selected music track not found.'), { code: 400 });
@@ -220,15 +220,6 @@ function validateSettings(b) {
       if (!/^[A-Za-z0-9]{10,40}$/.test(b[k])) throw Object.assign(new Error('Invalid ElevenLabs voice id'), { code: 400 });
       out[k] = b[k];
     }
-  }
-  if (b.animationProvider !== undefined) {
-    if (!animation.IDS.includes(b.animationProvider)) throw Object.assign(new Error('Invalid animation provider'), { code: 400 });
-    out.animationProvider = b.animationProvider;
-  }
-  if (b.animationEndpoint !== undefined) {
-    const ep = String(b.animationEndpoint).trim();
-    if (ep && !/^https:\/\/[^\s]+$/i.test(ep)) throw Object.assign(new Error('The video API endpoint must start with https://'), { code: 400 });
-    out.animationEndpoint = ep;
   }
   if (b.markSyntheticMedia !== undefined) out.markSyntheticMedia = !!b.markSyntheticMedia;
   if (b.storage) {

@@ -130,13 +130,13 @@
 
   function viewCreate() {
     const ov = state.overview;
-    const f = (state.form = state.form || { title: '', story: '', language: 'en', format: 'shorts', voiceGender: 'female', captions: true, music: 'ambient-calm', mode: 'animated-3d' });
-    const anim = ov.animation || { selected: 'local-3d', providers: [] };
+    const f = (state.form = state.form || { title: '', story: '', language: 'en', format: 'shorts', voiceGender: 'female', captions: true, music: 'ambient-calm', mode: '2d-cartoon' });
+    f.mode = '2d-cartoon';
+    const anim = ov.animation || { selected: 'local-2d', providers: [] };
     const animOk = (anim.providers.find((p) => p.id === anim.selected) || {}).ok;
-    if (!animOk) f.mode = 'classic';
     const notes = [];
     if (ov.daily) notes.push(dailyCard(ov));
-    if (!animOk) notes.push(h('p', { class: 'notice warn' }, '3D animation is unavailable: ' + ((anim.providers.find((p) => p.id === anim.selected) || {}).reason || 'unknown') + ' Classic videos still work.'));
+    if (!animOk) notes.push(h('p', { class: 'notice warn' }, '2D Cartoon Video Generation is unavailable: ' + ((anim.providers.find((p) => p.id === anim.selected) || {}).reason || 'unknown') + '.'));
     if (!ov.tts) notes.push(h('p', { class: 'notice warn' }, 'No text-to-speech key is set. Videos will have captions and music but no spoken voice. Add an OpenAI, ElevenLabs or Google key in Settings.'));
     if (!ov.ai.scenes) notes.push(h('p', { class: 'notice' }, 'Tip: add an Anthropic key in Settings for smarter scene planning. Without it the story is split by sentences.'));
     const story = h('textarea', { id: 'story', placeholder: f.language === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…', oninput: (e) => { f.story = e.target.value; counter.textContent = `${f.story.length} / ${ov.limits.storyMax}`; } });
@@ -163,14 +163,14 @@
       h('label', {}, 'Language', seg('language', [['en', 'English'], ['hi', 'हिन्दी']], f.language, (v) => { f.language = v; story.placeholder = v === 'hi' ? 'अपनी कहानी यहाँ लिखें…' : 'Paste or write your story here…'; })),
       h('label', {}, 'Voice', seg('voice', [['female', 'Female'], ['male', 'Male']], f.voiceGender, (v) => { f.voiceGender = v; }))),
     h('label', {}, 'Format', seg('format', [['shorts', 'Short 9:16'], ['long', 'Long 16:9']], f.format, (v) => { f.format = v; })),
-    h('label', {}, 'Video style', seg('mode', [['animated-3d', '3D animated (characters move and talk)'], ['classic', 'Classic (images)']], f.mode, (v) => { f.mode = v; }, !animOk ? ['animated-3d'] : [])),
+    h('div', { class: 'card' }, h('strong', {}, '2D Cartoon Video Generation'), h('p', { class: 'small muted' }, 'Hand-drawn style cartoon characters walk, talk, blink and show emotions on Indian village, forest, river and house backgrounds.')),
     h('label', {}, 'Background music', h('select', { onchange: (e) => { f.music = e.target.value; } }, ov.music.map((m) => h('option', { value: m.id, selected: m.id === f.music }, m.name)))),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: f.captions, onchange: (e) => { f.captions = e.target.checked; } }), 'Add subtitles'),
     submit);
 
     const side = h('div', { class: 'stack' },
       h('div', { class: 'card stack' }, h('h3', {}, 'Status'),
-        statusLine('3D animation', animOk ? `${anim.selected} ready` : 'Unavailable', !!animOk),
+        statusLine('2D Cartoon Video Generation', animOk ? 'Ready' : 'Unavailable', !!animOk),
         statusLine('Voiceover', ov.tts ? `On (${ov.tts})` : 'Not configured', !!ov.tts),
         statusLine('Scene planning', ov.ai.scenes ? 'AI' : 'Simple splitting', ov.ai.scenes),
         statusLine('Cloud storage', ov.storage.configured ? 'Connected' : 'Local only', ov.storage.configured),
@@ -222,7 +222,6 @@
       ELEVENLABS_API_KEY: ['ElevenLabs', 'Voiceover (TTS)'], GOOGLE_TTS_API_KEY: ['Google Cloud TTS', 'Voiceover (TTS)'],
       YOUTUBE_CLIENT_ID: ['Google OAuth client ID', 'For YouTube'], YOUTUBE_CLIENT_SECRET: ['Google OAuth client secret', 'For YouTube'],
       S3_ACCESS_KEY_ID: ['Storage access key ID', 'Cloud storage'], S3_SECRET_ACCESS_KEY: ['Storage secret access key', 'Cloud storage'],
-      VIDEO_API_KEY: ['Video generation API key', 'Optional paid 3D animation service'],
     };
     const keysCard = h('div', { class: 'card stack' },
       h('div', {}, h('h3', {}, 'API keys'), h('p', { class: 'small muted' }, 'Keys are encrypted on the server and never shown again after saving. Only the last 4 characters are displayed.')),
@@ -256,7 +255,6 @@
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
       h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
-      h('label', {}, 'Scene visuals', h('select', { onchange: (e) => { prefs.imageMode = e.target.value; } }, [['gradient', 'Animated gradients (free)'], ['ai', 'AI images (needs OpenAI key, costs per image)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.imageMode }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('h3', {}, 'Daily video'),
       h('p', { class: 'small muted' }, `Once a day (${String(prefs.dailyHour).padStart(2, '0')}:00 India time) one new original Hindi cartoon Short is made. Nothing is uploaded unless you turn on daily upload below.`),
@@ -273,14 +271,10 @@
         : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyPublicConsent, onchange: (e) => { prefs.dailyPublicConsent = e.target.checked; } }), 'I confirm: each daily video will become public on my channel at that time without another approval. This is asked once.'),
       h('button', { class: 'btn primary', type: 'submit' }, 'Save'));
 
-    const anim = state.overview.animation || { selected: 'local-3d', providers: [] };
-    const animForm = { animationProvider: s.animationProvider || 'local-3d', animationEndpoint: s.animationEndpoint || '' };
-    const animCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', animForm); state.settings = r.settings; await loadAll(); toast('Animation settings saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
-      h('div', {}, h('h3', {}, '3D animation'), h('p', { class: 'small muted' }, 'Free local renderer is the default. A paid video API is optional and only used if you choose it.')),
-      anim.providers.map((p) => h('div', { class: 'row' }, h('span', { class: `badge ${p.ok ? 'ok' : ''}` }, p.ok ? 'Ready' : 'Not ready'), h('span', { class: 'small' }, h('strong', {}, p.id), ' · ', p.reason))),
-      h('label', {}, 'Provider', h('select', { onchange: (e) => { animForm.animationProvider = e.target.value; } }, [['local-3d', 'Free local 3D (Chrome + three.js)'], ['external-http', 'Paid video API (endpoint below)']].map(([v, l]) => h('option', { value: v, selected: v === animForm.animationProvider }, l)))),
-      h('label', {}, 'Video API endpoint (https only)', h('input', { type: 'url', placeholder: 'https://', value: animForm.animationEndpoint, oninput: (e) => { animForm.animationEndpoint = e.target.value; } })),
-      h('button', { class: 'btn primary', type: 'submit' }, 'Save'));
+    const anim = state.overview.animation || { selected: 'local-2d', providers: [] };
+    const animCard = h('div', { class: 'card stack' },
+      h('div', {}, h('h3', {}, '2D Cartoon Video Generation'), h('p', { class: 'small muted' }, 'The renderer runs on this server for free. No paid video service or key is used.')),
+      anim.providers.map((p) => h('div', { class: 'row' }, h('span', { class: `badge ${p.ok ? 'ok' : ''}` }, p.ok ? 'Ready' : 'Not ready'), h('span', { class: 'small' }, h('strong', {}, p.id), ' · ', p.reason))));
     const musicCard = musicLibraryCard();
     return h('div', { class: 'stack' }, h('h2', {}, 'Settings'), h('div', { class: 'grid2' }, h('div', { class: 'stack' }, ytCard, keysCard), h('div', { class: 'stack' }, storageCard, animCard, prefCard, musicCard)));
   }

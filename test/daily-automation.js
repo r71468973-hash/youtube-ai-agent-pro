@@ -66,7 +66,7 @@ const NOV16_0640_IST = at('2026-11-16T01:10:00Z');
   store.setSettings({ dailyEnabled: true, dailyAutoUpload: true, dailyPublic: true, dailyPublicConsentAt: '2026-11-10T00:00:00Z' });
   const createVideo = async (body) => {
     const id = `day${Math.random().toString(36).slice(2, 8)}`;
-    store.saveVideo({ id, status: 'ready', title: body.title, story: body.story, format: 'shorts', mode: 'animated-3d', language: 'hi', createdAt: new Date().toISOString(), scenes: [], warnings: [], progress: 100 });
+    store.saveVideo({ id, status: 'ready', title: body.title, story: body.story, format: 'shorts', mode: '2d-cartoon', language: 'hi', createdAt: new Date().toISOString(), scenes: [], warnings: [], progress: 100 });
     return id;
   };
   const uploads = [];

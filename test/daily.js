@@ -39,10 +39,10 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const first = await daily.tick({ createVideo, now: at9ist });
     assert.match(first, /^created v1 for 2026-11-14$/);
     assert.strictEqual(created[0].language, 'hi');
-    assert.strictEqual(created[0].mode, 'animated-3d');
+    assert.strictEqual(created[0].mode, '2d-cartoon');
     assert.strictEqual(created[0].format, 'shorts');
     assert.strictEqual(store.getSettings().dailyLastDate, '2026-11-14');
-    ok('creates exactly one Hindi 3D Short at the chosen hour');
+    ok('creates exactly one Hindi 2D cartoon Short at the chosen hour');
 
     assert.strictEqual(await daily.tick({ createVideo, now: new Date('2026-11-14T06:00:00Z') }), 'already created today');
     assert.strictEqual(created.length, 1);
@@ -63,9 +63,9 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
 
     // Failures are recorded honestly and retried, not reported as success.
     store.setSettings({ dailyLastDate: null, dailyAttempts: null });
-    const failing = async () => { throw new Error('3D animation is not available: no renderer'); };
+    const failing = async () => { throw new Error('2D cartoon renderer is not available: no renderer'); };
     const failed = await daily.tick({ createVideo: failing, now: new Date('2026-11-16T03:30:00Z') });
-    assert.match(failed, /^failed: 3D animation/);
+    assert.match(failed, /^failed: 2D cartoon renderer/);
     const s = store.getSettings();
     assert.strictEqual(s.dailyLastDate, null, 'a failed day is not marked as done');
     assert.strictEqual(s.dailyAttempts.count, 1);

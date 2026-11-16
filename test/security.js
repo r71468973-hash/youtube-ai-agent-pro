@@ -67,7 +67,7 @@ const store = require('../lib/store');
   vault.set('YOUTUBE_CLIENT_SECRET', MARK.client);
   vault.set('YOUTUBE_CLIENT_ID', 'mark-client.apps.googleusercontent.com');
   store.init();
-  store.saveVideo({ id: VIDEO, status: 'ready', title: 'Security test video', story: MARK.story, format: 'shorts', mode: 'classic', language: 'en', createdAt: new Date().toISOString(), scenes: [], warnings: [], progress: 100, stage: 'Ready' });
+  store.saveVideo({ id: VIDEO, status: 'ready', title: 'Security test video', story: MARK.story, format: 'shorts', mode: '2d-cartoon', language: 'en', createdAt: new Date().toISOString(), scenes: [], warnings: [], progress: 100, stage: 'Ready' });
   ok('test data written through the encrypted vault and database');
 })();
 

@@ -1,5 +1,5 @@
 'use strict';
-/** Unit checks for the animation layer: story parsing, timelines, and the external-provider contract. */
+/** Unit checks for the 2D cartoon layer: story parsing, timelines, backgrounds, sound effects and the renderer. */
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
@@ -7,7 +7,9 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const script = require('../lib/animation/script');
-const external = require('../lib/animation/external');
+const fs2 = fs;
+const sfx = require('../lib/sfx');
+const { status: rendererStatus } = require('../lib/animation/local2d');
 
 let passed = 0;
 const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
@@ -65,58 +67,51 @@ for (const [k, b] of built.entries()) {
 }
 ok('voice layout equals scene length; timelines contiguous; lip-sync matches subtitles');
 
-// --- external provider contract (mock job API serving a real MP4)
+// --- backgrounds: forest, courtyard, village default
+assert.strictEqual(script.inferSetting('रमेश जंगल में गया'), 'forest');
+assert.strictEqual(script.inferSetting('Ravi went to the forest'), 'forest');
+assert.strictEqual(script.inferSetting('उसके घर के आंगन में'), 'courtyard');
+assert.strictEqual(script.inferSetting('नदी किनारे'), 'river');
+const noPlace = script.planAnimatedScenes({ story: 'Ravi: Hello friend!\nThe day was bright and warm.', language: 'en', format: 'shorts', voiceGender: 'male' });
+assert.strictEqual(noPlace.scenes[0].setting, 'village');
+ok('forest, house courtyard, river and the Indian village default are chosen from the story');
+
+// --- 2D renderer: no 3D code is left in the stage
+const stageSrc = fs2.readFileSync(require('path').join(__dirname, '..', 'lib', 'animation', 'stage2d', 'stage.js'), 'utf8');
+assert(!/THREE\.|three\.module|WebGLRenderer|getContext\('webgl/i.test(stageSrc), 'the 2D stage must not use 3D code');
+assert(fs2.existsSync(require('path').join(__dirname, '..', 'lib', 'animation', 'stage2d', 'index.html')));
+assert(!fs2.existsSync(require('path').join(__dirname, '..', 'lib', 'animation', 'stage')), 'the old 3D stage folder must be gone');
+ok('the renderer is 2D only: no three.js, no WebGL, no 3D stage files');
+const st = rendererStatus();
+assert.strictEqual(st.id, 'local-2d');
+ok(`2D renderer status reported honestly (${st.ok ? 'Chrome found' : 'Chrome missing: ' + st.reason})`);
+
+// --- sound effects: footsteps for walking and running, a whoosh for jumps; the track has the video's exact length
+const fakeScenes = [
+  { duration: 3, spec: { timeline: [{ char: 'c1', start: 0.2, end: 2.2, action: 'walk', from: [-3, 0], to: [-1, 0] }] } },
+  { duration: 2, spec: { timeline: [{ char: 'c1', start: 0, end: 1.5, action: 'jump', from: [0, 0], to: [0, 0] }] } },
+];
+const events = sfx.eventsFromScenes(fakeScenes);
+assert(events.filter((e) => e.kind === 'step').length >= 4, 'walking makes footsteps');
+assert(events.some((e) => e.kind === 'whoosh' && Math.abs(e.t - 3) < 1e-6), 'jump at the start of scene 2 makes a whoosh');
+assert(events.every((e) => e.t >= 0 && e.t < 5));
+ok('footsteps follow walking and a whoosh follows jumping');
+const linked = script.linkTransitions(built.map((b) => ({ duration: b.duration, spec: JSON.parse(JSON.stringify(b.spec)) })));
+assert(!linked[0].spec.transition, 'the first scene has no dissolve');
+if (linked.length > 1) {
+  assert.strictEqual(linked[1].spec.transition.seconds, script.TRANSITION_SEC);
+  assert(!linked[1].spec.transition.from.transition, 'no nested dissolves');
+  assert(Math.abs(linked[1].spec.transition.fromT - (linked[0].duration - 1 / script.FPS)) < 1e-6);
+}
+ok('each new scene dissolves in from the final frame of the one before, without nesting');
+const sfxWav = require('path').join(require('os').tmpdir(), `sfx-${process.pid}.wav`);
+sfx.buildSfxTrack(fakeScenes, 5, sfxWav);
+const sfxLen = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', sfxWav]).toString());
+assert(Math.abs(sfxLen - 5) < 0.02, 'sound track length ' + sfxLen);
+fs2.rmSync(sfxWav, { force: true });
+ok('sound-effects track is exactly the video length');
+
 (async () => {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-'));
-  const src = path.join(work, 'src.mp4');
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=24', '-t', '2', '-pix_fmt', 'yuv420p', src]);
-  let polls = 0;
-  const srv = http.createServer((req, res) => {
-    const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    if (req.url === '/video.mp4') { res.writeHead(200, { 'content-type': 'video/mp4' }); return fs.createReadStream(src).pipe(res); }
-    if (req.headers.authorization !== 'Bearer test-key') return json(401, { error: 'bad key' });
-    if (req.url === '/credits') return json(402, { error: 'insufficient credits' });
-    if (req.method === 'POST' && req.url === '/jobs') {
-      let body = '';
-      req.on('data', (d) => { body += d; });
-      req.on('end', () => {
-        const b = JSON.parse(body);
-        assert(b.prompt.includes('3D animated cartoon'));
-        json(200, { jobId: 'j1' });
-      });
-      return;
-    }
-    if (req.method === 'GET' && req.url === '/jobs/j1') {
-      polls++;
-      return json(200, polls < 2 ? { status: 'running' } : { status: 'succeeded', videoUrl: `http://127.0.0.1:${srv.address().port}/video.mp4` });
-    }
-    json(404, { error: 'not found' });
-  });
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-  const base = `http://127.0.0.1:${srv.address().port}`;
-  try {
-    const spec = { setting: 'park', duration: 1.5, characters: [], timeline: [] };
-    const clips = await external.renderScenes([spec], { endpoint: `${base}/jobs`, key: 'test-key', width: 540, height: 960, fps: 24, workDir: work });
-    assert.strictEqual(clips.length, 1);
-    assert(Math.abs(Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', clips[0].file]).toString()) - 1.5) < 0.05, 'clip trimmed to scene length');
-    assert(polls >= 2, 'job was polled until it succeeded');
-    ok('external provider: submit, poll, download and normalise a clip');
-
-    await assert.rejects(
-      external.renderScenes([spec], { endpoint: `${base}/jobs`, key: 'wrong', width: 540, height: 960, fps: 24, workDir: work }),
-      /HTTP 401/,
-    );
-    ok('external provider: wrong key reported');
-
-    await assert.rejects(
-      external.renderScenes([spec], { endpoint: `${base}/credits`, key: 'test-key', width: 540, height: 960, fps: 24, workDir: work }),
-      /no credits or quota left/,
-    );
-    ok('external provider: no credits reported honestly (not faked)');
-  } finally {
-    srv.close();
-    fs.rmSync(work, { recursive: true, force: true });
-  }
   // --- time of day and camera shots
   assert.strictEqual(script.inferTime('सुबह का सूरज निकला'), 'sunrise');
   assert.strictEqual(script.inferTime('The sun rose over the hills at dawn'), 'sunrise');

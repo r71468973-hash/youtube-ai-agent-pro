@@ -1,5 +1,5 @@
 FROM node:22-bookworm-slim
-# ffmpeg: rendering. chromium: headless 3D animation renderer (WebGL via SwiftShader). fonts: Hindi captions.
+# ffmpeg: rendering. chromium: headless renderer for the 2D cartoon videos (Canvas 2D). fonts: Hindi captions.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg chromium fontconfig fonts-dejavu-core fonts-noto-core python3 python3-venv ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*

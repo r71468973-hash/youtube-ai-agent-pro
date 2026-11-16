@@ -103,7 +103,8 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const fa = path.join(DATA, 'videos', va.id, 'video.mp4');
     const sa = probe(fa);
     const vs = sa.find((s) => s.codec_type === 'video');
-    assert.strictEqual(`${vs.width}x${vs.height}`, '1080x1920'); ok('Short is 1080x1920 (9:16)');
+    const wantShort = process.env.RENDER_HD === '1' ? '1080x1920' : '720x1280';
+    assert.strictEqual(`${vs.width}x${vs.height}`, wantShort); ok(`2D cartoon Short is ${wantShort} (9:16)`);
     assert(sa.some((s) => s.codec_type === 'audio')); ok('audio track present (music bed)');
     assert(va.warnings.some((w) => /text-to-speech/.test(w))); ok('missing TTS key reported honestly');
     assert(fs.existsSync(path.join(DATA, 'videos', va.id, 'thumb.jpg'))); ok('thumbnail created');
@@ -117,31 +118,33 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const vb = await waitFor(b.data.video.id);
     assert.strictEqual(vb.status, 'ready', 'long failed: ' + vb.error); ok('Hindi long video generated');
     const sb = probe(path.join(DATA, 'videos', vb.id, 'video.mp4')).find((s) => s.codec_type === 'video');
-    assert.strictEqual(`${sb.width}x${sb.height}`, '1920x1080'); ok('Long video is 1920x1080 (16:9)');
+    const wantLong = process.env.RENDER_HD === '1' ? '1920x1080' : '1280x720';
+    assert.strictEqual(`${sb.width}x${sb.height}`, wantLong); ok(`2D cartoon long video is ${wantLong} (16:9)`);
 
-    // --- animated 3D video: real 3D clips, per-line voices, subtitles, music
+    // --- 2D cartoon Short with dialogue: animated characters, per-line voices, footsteps, subtitles
     const ovr = (await call("GET", "/api/overview")).data;
-    const st3 = ovr.animation.providers.find((x) => x.id === "local-3d");
-    assert(st3 && typeof st3.ok === "boolean"); ok("animation providers reported with reasons");
+    const st2 = ovr.animation.providers.find((x) => x.id === "local-2d");
+    assert(st2 && typeof st2.ok === "boolean"); ok("2D cartoon renderer reported with its reason");
     const storyDlg = "Ravi: Let us run to the park!\nSita [F]: Yes, I will walk with you.\nThe two friends played in the garden and were very happy. Later they walked home in the evening.";
-    const c3 = await call("POST", "/api/videos", { story: storyDlg, language: "en", format: "shorts", mode: "animated-3d", music: "none", captions: true });
-    if (!st3.ok) {
-      assert.strictEqual(c3.status, 409); ok("3D refused honestly when no renderer is available");
+    const c3 = await call("POST", "/api/videos", { story: storyDlg, language: "en", format: "shorts", music: "none", captions: true });
+    if (!st2.ok) {
+      assert.strictEqual(c3.status, 409); ok("2D cartoon refused honestly when the renderer is unavailable");
     } else {
       assert.strictEqual(c3.status, 202);
       const v3 = await waitFor(c3.data.video.id, 900000);
-      assert.strictEqual(v3.status, "ready", "3D failed: " + v3.error); ok("animated 3D Short generated");
-      assert.strictEqual(v3.mode, "animated-3d"); assert.strictEqual(v3.engine, "local-3d"); ok("video recorded as animated-3d / local-3d");
+      assert.strictEqual(v3.status, "ready", "2D cartoon failed: " + v3.error); ok("2D cartoon Short generated");
+      assert.strictEqual(v3.mode, "2d-cartoon"); assert.strictEqual(v3.engine, "local-2d"); ok("video recorded as 2d-cartoon / local-2d");
       const f3 = path.join(DATA, "videos", v3.id, "video.mp4");
       const vs3 = probe(f3).find((x) => x.codec_type === "video");
       const want3 = process.env.RENDER_HD === "1" ? "1080x1920" : "720x1280";
-      assert.strictEqual(vs3.width + "x" + vs3.height, want3); ok("3D Short is " + want3 + " (9:16)");
+      assert.strictEqual(vs3.width + "x" + vs3.height, want3); ok("2D cartoon Short is " + want3 + " (9:16)");
       const p1 = path.join(DATA, "f1.png"), p2 = path.join(DATA, "f2.png");
       execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "0.8", "-i", f3, "-frames:v", "1", p1]);
       execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "3.0", "-i", f3, "-frames:v", "1", p2]);
       assert(!fs.readFileSync(p1).equals(fs.readFileSync(p2))); ok("frames change over time (animated, not a still image)");
+      assert(v3.soundEffects > 0, "footsteps were added"); ok("footsteps and sound effects added from the movement timeline");
       assert(v3.warnings.some((w) => /text-to-speech/.test(w))); ok("missing voice reported honestly (no key here)");
-      assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("3D thumbnail created");
+      assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("thumbnail created");
     }
 
     // --- playback from cloud: with the local copy gone, the video is sent from the bucket, not a 404
