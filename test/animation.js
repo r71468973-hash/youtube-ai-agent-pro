@@ -114,6 +114,13 @@ ok('sound-effects track is exactly the video length');
 (async () => {
   // --- time of day and camera shots
   assert.strictEqual(script.inferTime('सुबह का सूरज निकला'), 'sunrise');
+  assert.strictEqual(script.inferWeather('बाहर बारिश हो रही थी'), 'rain');
+  assert.strictEqual(script.inferWeather('तेज़ धूप थी'), 'sun');
+  assert.strictEqual(script.inferAction('किसान ने खेत में बीज बोया'), 'sow');
+  ok('farm weather (rain, strong sun) and sowing action recognised');
+  const { FILLERS } = require('../lib/duration');
+  for (const line of [...FILLERS.hi, ...FILLERS.en]) assert.ok(!/रात|सुबह|sunset|night|morning/i.test(line), 'filler changes time of day: ' + line);
+  ok('filler lines do not change the time of day');
   assert.strictEqual(script.inferTime('The sun rose over the hills at dawn'), 'sunrise');
   assert.strictEqual(script.inferTime('शाम को दादाजी घर लौटे'), 'evening');
   assert.strictEqual(script.inferTime('Rohan walked to the park.'), null);
