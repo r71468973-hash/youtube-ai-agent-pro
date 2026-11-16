@@ -122,6 +122,8 @@
       h('p', { class: 'small' }, d.message || ''),
       h('p', {}, h('strong', {}, 'Next publish: '), d.nextPublishAt ? `${istAt(d.nextPublishAt)}${d.nextPublishVideo ? ` · ${d.nextPublishVideo.title}` : ''}` : 'not scheduled yet'),
       h('p', {}, h('strong', {}, 'Next video made: '), d.nextCreateAt ? istAt(d.nextCreateAt) : 'daily videos are off'),
+      (d.slots || []).map((x) => h('p', { class: 'small' }, h('strong', {}, `${x.label}: `), `made at ${x.createAt ? istAt(x.createAt) : 'off'} · publishes ${x.publishTime} IST${x.lastVideo ? ` · last: ${x.lastVideo.title}${x.lastVideo.youtubeUrl ? ' (uploaded)' : ''}` : ''}`)),
+      (d.history || []).length ? h('div', { class: 'stack' }, h('strong', {}, 'Daily history'), d.history.slice(0, 6).map((x) => h('p', { class: 'small' }, `${x.slot} · ${x.date} · ${x.status} · ${x.title}`))) : null,
       d.lastError ? h('p', { class: 'notice warn' }, `Last daily error: ${d.lastError.message}`) : null,
       recent.length
         ? h('div', { class: 'stack' }, h('strong', {}, 'Recent notices'), recent.map((n) => h('p', { class: 'small' }, h('strong', {}, `${istAt(n.at)} · `), n.title)))
@@ -257,8 +259,8 @@
       h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('h3', {}, 'Daily video'),
-      h('p', { class: 'small muted' }, `Once a day (${String(prefs.dailyHour).padStart(2, '0')}:00 India time) one new original Hindi cartoon Short is made. Nothing is uploaded unless you turn on daily upload below.`),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyEnabled, onchange: (e) => { prefs.dailyEnabled = e.target.checked; } }), 'Make one daily video'),
+      h('p', { class: 'small muted' }, `Twice a day, India time: a new original Hindi cartoon Short is made at ${String(prefs.dailyHour).padStart(2, '0')}:00 (morning, published ${String(prefs.dailyPublishHour).padStart(2, '0')}:${String(prefs.dailyPublishMinute).padStart(2, '0')}) and at ${String(prefs.dailyEveningHour ?? 16).padStart(2, '0')}:00 (evening, published ${String(prefs.dailyEveningPublishHour ?? 18).padStart(2, '0')}:${String(prefs.dailyPublishMinute).padStart(2, '0')}). Nothing is uploaded unless you turn on daily upload below.`),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyEnabled, onchange: (e) => { prefs.dailyEnabled = e.target.checked; } }), 'Make daily videos (morning and evening)'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyAutoUpload, onchange: (e) => { prefs.dailyAutoUpload = e.target.checked; } }), 'Upload each daily video to my YouTube channel'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyPublic, onchange: (e) => { prefs.dailyPublic = e.target.checked; } }), 'Make each daily video public on YouTube at the publish time below (otherwise it stays PRIVATE)'),
       h('p', { class: 'small muted' }, 'Publish time (India time, IST)'),

@@ -56,13 +56,13 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const calls = [];
     const upload = async (id, m) => { calls.push({ id, ...m }); return true; };
     const base = { id: 'vid-public', title: 'T', description: 'D', tags: ['a'], uploadAttempts: 0 };
-    store.setSettings({ dailyLastVideo: base });
+    store.setSettings({ dailySlots: { morning: { lastVideo: base } } });
     const getVideo = (id) => ({ id, status: 'ready', youtube: null });
     const r1 = await daily.autoUploadTick({ upload, isYouTubeReady: () => true, getVideo, now });
     assert.strictEqual(r1, 'uploaded vid-public as public'); ok('upload result names the privacy used');
     assert.strictEqual(calls[0].privacy, 'public'); assert.strictEqual(calls[0].publishAt, '2026-11-15T13:00:00.000Z'); ok('consented daily video is sent public at its publish time');
 
-    store.setSettings({ dailyLastVideo: { ...base, id: 'vid-private', uploadAttempts: 0, uploadedAt: undefined }, dailyPublicConsentAt: null });
+    store.setSettings({ dailySlots: { morning: { lastVideo: { ...base, id: 'vid-private', uploadAttempts: 0, uploadedAt: undefined } } }, dailyPublicConsentAt: null });
     calls.length = 0;
     await daily.autoUploadTick({ upload, isYouTubeReady: () => true, getVideo: (id) => ({ id, status: 'ready' }), now });
     assert.strictEqual(calls[0].privacy, 'private'); assert.strictEqual(calls[0].publishAt, null); ok('without consent the daily video is sent PRIVATE');

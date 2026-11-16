@@ -84,7 +84,7 @@ const NOV16_0640_IST = at('2026-11-16T01:10:00Z');
   const isReady = () => true;
 
   assert((await daily.tick({ createVideo, now: NOV16_0405_IST })).startsWith('created'));
-  const day1 = store.getSettings().dailyLastVideo.id;
+  const day1 = store.getSettings().dailySlots.morning.lastVideo.id;
   assert.strictEqual(await daily.tick({ createVideo, now: NOV16_0410_IST }), 'already created today');
   ok('one video is made at 04:00 IST and not again the same day');
 
@@ -113,16 +113,16 @@ const NOV16_0640_IST = at('2026-11-16T01:10:00Z');
   const day2 = '2026-11-18';
   const at18 = (hm) => at(`${day2}T${hm}:00+05:30`);
   assert((await daily.tick({ createVideo, now: at18('04:05') })).startsWith('created'));
-  const first = store.getSettings().dailyLastVideo.id;
+  const first = store.getSettings().dailySlots.morning.lastVideo.id;
   store.saveVideo({ ...store.getVideo(first), status: 'failed', error: 'Interrupted by a server restart.' });
   assert((await daily.tick({ createVideo, now: at18('04:30') })).startsWith('made again'));
-  const second = store.getSettings().dailyLastVideo.id;
+  const second = store.getSettings().dailySlots.morning.lastVideo.id;
   store.saveVideo({ ...store.getVideo(second), status: 'failed', error: 'render failed' });
   assert((await daily.tick({ createVideo, now: at18('04:40') })).startsWith('made again'));
-  const third = store.getSettings().dailyLastVideo.id;
+  const third = store.getSettings().dailySlots.morning.lastVideo.id;
   store.saveVideo({ ...store.getVideo(third), status: 'failed', error: 'render failed' });
   assert((await daily.tick({ createVideo, now: at18('04:50') })).startsWith('gave up'));
-  assert.notStrictEqual(store.getSettings().dailyLastVideo.id, first);
+  assert.notStrictEqual(store.getSettings().dailySlots.morning.lastVideo.id, first);
   ok('a failed daily video is made again at most twice a day, then the app stops and reports it');
 
   // 8. The 06:30 publish: YouTube confirms the video is public, and it is recorded and announced.

@@ -192,6 +192,16 @@ function validateSettings(b) {
     if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyPublishHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
     out.dailyPublishHour = h;
   }
+  if (b.dailyEveningHour !== undefined) {
+    const h = Number(b.dailyEveningHour);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyEveningHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
+    out.dailyEveningHour = h;
+  }
+  if (b.dailyEveningPublishHour !== undefined) {
+    const h = Number(b.dailyEveningPublishHour);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw Object.assign(new Error('dailyEveningPublishHour must be a whole hour from 0 to 23 (India time)'), { code: 400 });
+    out.dailyEveningPublishHour = h;
+  }
   if (b.dailyPublishMinute !== undefined) {
     const m = Number(b.dailyPublishMinute);
     if (!Number.isInteger(m) || m < 0 || m > 59) throw Object.assign(new Error('dailyPublishMinute must be from 0 to 59'), { code: 400 });
