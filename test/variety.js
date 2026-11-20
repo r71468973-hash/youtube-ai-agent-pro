@@ -56,4 +56,16 @@ for (let seed = 0; seed < 60; seed++) {
 }
 ok('stories have a beginning, middle and a lesson ending');
 
-console.log('\n5 variety checks passed');
+// Scene count: a Short with at least 8 lines gets 8 or more scenes, and never more than 12.
+{
+  const lines = Array.from({ length: 9 }, (_, i) => 'रोहन: यह संवाद नंबर ' + i + ' है।').join('\n');
+  const p = script.planAnimatedScenes({ story: lines, language: 'hi', format: 'shorts', voiceGender: 'male', seed: 'scenes' });
+  assert(p.scenes.length >= 8 && p.scenes.length <= 12, 'scene count ' + p.scenes.length);
+  ok('a 9-line story gives ' + p.scenes.length + ' scenes (8–12 range)');
+  const long = Array.from({ length: 40 }, (_, i) => 'मीरा: संवाद ' + i + ' ' + 'शब्द '.repeat(25)).join('\n');
+  const q = script.planAnimatedScenes({ story: long, language: 'hi', format: 'shorts', voiceGender: 'male', seed: 'cap' });
+  assert(q.scenes.length <= 12, 'cap exceeded: ' + q.scenes.length);
+  ok('a very long story is capped at 12 Shorts scenes');
+}
+
+console.log('\n7 variety checks passed');
