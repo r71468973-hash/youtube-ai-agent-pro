@@ -9,6 +9,7 @@ const store = require('./lib/store');
 const storage = require('./lib/storage');
 const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
+const disk = require('./lib/disk');
 const providers = require('./lib/providers');
 const animation = require('./lib/animation');
 const daily = require('./lib/daily');
@@ -30,6 +31,11 @@ ensureDir(DATA_DIR);
 ensureDir(pipeline.VIDEOS_DIR);
 ensureDir(pipeline.MUSIC_DIR);
 store.init();
+// Temporary files left by jobs that were stopped or failed before the cleanup fix are removed now.
+{
+  const freedMb = pipeline.sweepOrphanWork();
+  console.log(`[startup] temporary files cleared: ${freedMb} MB. Free space on data volume: ${disk.freeMb(DATA_DIR)} MB`);
+}
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const MUSIC_EXT = new Set(['.mp3', '.wav', '.m4a', '.ogg']);
@@ -128,6 +134,7 @@ function cleanText(s, max) {
 
 /** Saves a validated video request and queues it. Shared by the dashboard and the daily job. */
 function createJob(input) {
+  disk.assertRoom(pipeline.VIDEOS_DIR); // 507 with a clear message when the volume is full
   const id = newId(6);
   const v = store.saveVideo({ id, ...input, status: 'queued', progress: 0, stage: 'Queued', createdAt: new Date().toISOString(), warnings: [], error: null, scenes: [] });
   pipeline.enqueue(id);
@@ -661,10 +668,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/auth/google/callback' && req.method === 'GET') return await handleOAuthCallback(req, res, url);
     if (req.method !== 'GET' && req.method !== 'HEAD') return bad(res, 'Method not allowed', 405);
     return serveStatic(req, res, decodeURIComponent(url.pathname));
-  } catch (e) {
+  } catch (raw) {
+    const e = disk.asStorageError(raw);
     const code = e.code && Number.isInteger(e.code) ? e.code : 500;
-    if (code === 500) console.error('[server]', scrub(e.stack || e.message));
-    if (!res.headersSent) bad(res, code === 500 ? 'Internal server error.' : e.message, code);
+    // Full server log for every failed request (secrets scrubbed), so the cause can be found in Railway logs.
+    if (code >= 500) console.error(`[server] ${req.method} ${String(req.url).split('?')[0]} -> ${code}:`, scrub(e.stack || e.message));
+    if (!res.headersSent) bad(res, code === 500 ? 'Internal server error. The details are in the server log.' : e.message, code);
     else res.end();
   }
 });
