@@ -444,6 +444,13 @@ async function handleApi(req, res, url) {
 
   /* API keys: write-only. Values are never returned. */
   if (method === 'GET' && p === '/api/keys') return json(res, 200, { keys: vault.list() });
+  const testMatch = /^\/api\/keys\/([A-Z0-9_]+)\/test$/.exec(p);
+  if (method === 'POST' && testMatch) {
+    const name = testMatch[1];
+    if (!KEY_NAMES.includes(name)) return bad(res, 'Unknown key.', 404);
+    const result = await require('./lib/key-tests').testKey(name, (n) => vault.get(n));
+    return json(res, 200, result);
+  }
   let m = /^\/api\/keys\/([A-Z0-9_]+)$/.exec(p);
   if (m) {
     const name = m[1];

@@ -220,21 +220,51 @@
         yt.connected ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (!confirm('Disconnect YouTube? Stored tokens will be deleted and revoked.')) return; await api('POST', '/api/youtube/disconnect'); await loadAll(); render(); } }, 'Disconnect') : null));
 
     const LABELS = {
+      GEMINI_API_KEY: ['Google Gemini API key', 'Gemini Omni 1.2 Flash video generation (paid; asks approval first)'],
+      REPLICATE_API_TOKEN: ['Replicate API token', 'Replicate video and image models'],
       ANTHROPIC_API_KEY: ['Anthropic', 'Smarter scene planning'], OPENAI_API_KEY: ['OpenAI', 'Voiceover (TTS) and optional AI images'],
       ELEVENLABS_API_KEY: ['ElevenLabs', 'Voiceover (TTS)'], GOOGLE_TTS_API_KEY: ['Google Cloud TTS', 'Voiceover (TTS)'],
       YOUTUBE_CLIENT_ID: ['Google OAuth client ID', 'For YouTube'], YOUTUBE_CLIENT_SECRET: ['Google OAuth client secret', 'For YouTube'],
       S3_ACCESS_KEY_ID: ['Storage access key ID', 'Cloud storage'], S3_SECRET_ACCESS_KEY: ['Storage secret access key', 'Cloud storage'],
+      NOTIFY_WEBHOOK_URL: ['Notification webhook URL', 'Message sent when a video is ready'],
     };
+    // Any key the server returns without a label still shows, so a new key name can never crash this page.
+    const labelOf = (n) => LABELS[n] || [n, 'Optional key'];
+    const GROUPS = [
+      ['Google Gemini API', 'Key for Gemini Omni 1.2 Flash. Paid: each clip needs your approval of its exact cost.', ['GEMINI_API_KEY']],
+      ['Video generation', 'Replicate and Gemini video models. The free 2D renderer needs no key.', ['REPLICATE_API_TOKEN']],
+      ['Image generation', 'Optional AI images.', ['OPENAI_API_KEY']],
+      ['Voice and text-to-speech', 'Hindi narration. The free voices need no key.', ['ELEVENLABS_API_KEY', 'GOOGLE_TTS_API_KEY']],
+      ['YouTube OAuth and upload', 'Google OAuth client used to connect and upload to your channel.', ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET']],
+      ['Cloud storage', 'S3-compatible storage (Cloudflare R2 and others).', ['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']],
+      ['Scene planning and alerts', '', ['ANTHROPIC_API_KEY', 'NOTIFY_WEBHOOK_URL']],
+    ];
+    const byName = Object.fromEntries(state.keys.map((k) => [k.name, k]));
+    const testResult = h('p', { class: 'small', role: 'status', 'aria-live': 'polite' });
+    const keyRow = (k) => {
+      const [title, purpose] = labelOf(k.name);
+      const input = h('input', { type: 'password', autocomplete: 'off', placeholder: k.configured ? 'Enter a new value to replace' : 'Paste key', 'aria-label': title });
+      const test = k.configured ? h('button', { class: 'btn small', type: 'button', onclick: async (e) => {
+        const b = e.currentTarget; b.disabled = true;
+        try { const r = await api('POST', `/api/keys/${k.name}/test`); testResult.className = `small ${r.ok ? 'ok' : 'err'}`; testResult.textContent = `${title}: ${r.message}`; }
+        catch (ex) { testResult.className = 'small err'; testResult.textContent = `${title}: ${ex.message}`; }
+        finally { b.disabled = false; }
+      } }, 'Test') : null;
+      return h('div', { class: 'keyrow' },
+        h('div', { class: 'row' }, h('strong', {}, title), k.configured ? h('span', { class: 'badge ok' }, `Saved ${k.hint}${k.source === 'env' ? ' (env)' : ''}`) : h('span', { class: 'badge' }, 'Not set'), h('span', { class: 'small muted' }, purpose)),
+        h('form', { onsubmit: async (e) => { e.preventDefault(); if (!input.value.trim()) return; try { const r = await api('PUT', `/api/keys/${k.name}`, { value: input.value.trim() }); input.value = ''; state.keys = r.keys; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
+          input, h('button', { class: 'btn small primary', type: 'submit' }, 'Save'), test,
+          k.source === 'vault' ? h('button', { class: 'btn small danger', type: 'button', onclick: async () => { if (!confirm(`Remove ${title}?`)) return; const r = await api('DELETE', `/api/keys/${k.name}`); state.keys = r.keys; await loadAll(); render(); } }, 'Remove') : null));
+    };
+    const grouped = new Set(GROUPS.flatMap((g) => g[2]));
     const keysCard = h('div', { class: 'card stack' },
-      h('div', {}, h('h3', {}, 'API keys'), h('p', { class: 'small muted' }, 'Keys are encrypted on the server and never shown again after saving. Only the last 4 characters are displayed.')),
-      h('div', {}, state.keys.map((k) => {
-        const input = h('input', { type: 'password', autocomplete: 'off', placeholder: k.configured ? 'Enter a new value to replace' : 'Paste key', 'aria-label': LABELS[k.name][0] });
-        return h('div', { class: 'keyrow' },
-          h('div', { class: 'row' }, h('strong', {}, LABELS[k.name][0]), k.configured ? h('span', { class: 'badge ok' }, `Saved ${k.hint}${k.source === 'env' ? ' (env)' : ''}`) : h('span', { class: 'badge' }, 'Not set'), h('span', { class: 'small muted' }, LABELS[k.name][1])),
-          h('form', { onsubmit: async (e) => { e.preventDefault(); if (!input.value.trim()) return; try { const r = await api('PUT', `/api/keys/${k.name}`, { value: input.value.trim() }); input.value = ''; state.keys = r.keys; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
-            input, h('button', { class: 'btn small primary', type: 'submit' }, 'Save'),
-            k.source === 'vault' ? h('button', { class: 'btn small danger', type: 'button', onclick: async () => { if (!confirm(`Remove ${LABELS[k.name][0]}?`)) return; const r = await api('DELETE', `/api/keys/${k.name}`); state.keys = r.keys; await loadAll(); render(); } }, 'Remove') : null));
-      })));
+      h('div', {}, h('h3', {}, 'API keys'), h('p', { class: 'small muted' }, 'Keys are encrypted on the server and never shown again after saving. Only the last 4 characters are displayed. Test makes one free, read-only call to the service and never spends money.')),
+      GROUPS.map(([title, note, names]) => {
+        const rows = names.filter((n) => byName[n]).map((n) => keyRow(byName[n]));
+        return rows.length ? h('div', { class: 'stack', 'data-group': title }, h('h4', {}, title), note ? h('p', { class: 'small muted' }, note) : null, rows) : null;
+      }),
+      state.keys.filter((k) => !grouped.has(k.name)).map(keyRow),
+      testResult);
 
     const f = { endpoint: stg.endpoint, region: stg.region, bucket: stg.bucket, prefix: stg.prefix, pathStyle: stg.pathStyle };
     const storageCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', { storage: f }); state.settings = r.settings; await loadAll(); toast('Storage settings saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
