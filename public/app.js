@@ -281,11 +281,12 @@
       ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
       dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload,
       dailyHour: s.dailyHour ?? 4, dailyPublishHour: s.dailyPublishHour ?? 6, dailyPublishMinute: s.dailyPublishMinute ?? 30,
-      dailyPublic: !!s.dailyPublic, dailyPublicConsent: false, dailyPrivacy: s.dailyPrivacy || 'private',
+      dailyPublic: !!s.dailyPublic, dailyPublicConsent: false, dailyPrivacy: s.dailyPrivacy || 'private', videoEngine: s.videoEngine || 'local-2d',
     };
     const consentGiven = !!s.dailyPublicConsentAt;
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
+      h('label', {}, 'Video engine', h('select', { onchange: (e) => { prefs.videoEngine = e.target.value; } }, [['local-2d', 'Free 2D renderer (default)'], ['gemini-omni', 'Gemini Omni AI video (paid, approval for each video)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.videoEngine }, l)))),
       h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('h3', {}, 'Daily video'),
@@ -356,6 +357,14 @@
     if (v.hasFile || v.inCloud) body.push(h('div', { class: v.format === 'shorts' ? 'thumb tall' : '' }, h('video', { class: 'player', controls: true, playsinline: true, preload: 'metadata', src: `/api/videos/${v.id}/file`, poster: `/api/videos/${v.id}/thumb` })));
     if (v.status === 'published' && v.youtube) body.push(h('p', { class: 'notice ok' }, 'Uploaded as ', v.youtube.privacy, ': ', h('a', { href: v.youtube.url, target: '_blank', rel: 'noopener noreferrer' }, v.youtube.url)));
 
+    if (v.status === 'awaiting_approval') body.push(h('div', { class: 'card stack' },
+      h('strong', {}, 'Paid AI video, waiting for your approval'),
+      h('p', { class: 'small' }, 'Thirty seconds: six 5-second clips by Gemini Omni 1.2 Flash, 720p, 9:16. Estimated cost $2.10 (six × $0.35). Nothing is spent until you approve.'),
+      h('p', { class: 'small muted' }, 'Approving only generates the video. Nothing is uploaded to YouTube.'),
+      h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        if (!confirm('Approve exactly $2.10 for this paid AI video?')) return;
+        try { await api('POST', `/api/videos/${v.id}/gemini-approve`, { usd: 2.1 }); toast('Approved. Generating the Gemini video.'); await loadAll(); render(); } catch (ex) { toast(ex.message, 6000); }
+      } }, 'Approve $2.10 and generate')));
     if (v.status === 'ready') body.push(approvalForm(v, yt));
     const actions = [];
     if (v.hasFile || v.inCloud) actions.push(h('a', { class: 'btn', href: `/api/videos/${v.id}/file?download=1` }, 'Download'));
