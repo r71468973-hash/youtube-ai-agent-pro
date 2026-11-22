@@ -215,6 +215,8 @@ function validateSettings(b) {
     if (!Number.isInteger(m) || m < 0 || m > 59) throw Object.assign(new Error('dailyPublishMinute must be from 0 to 59'), { code: 400 });
     out.dailyPublishMinute = m;
   }
+  // Owner turns OpenAI voice back on after topping up credits. The automatic switch-off stays until then.
+  if (b.openaiTtsReenable === true) { out.openaiTtsDisabledAt = null; out.openaiTtsDisabledReason = null; }
   if (b.dailyPrivacy !== undefined) {
     if (!['private', 'unlisted'].includes(b.dailyPrivacy)) throw Object.assign(new Error('dailyPrivacy must be private or unlisted'), { code: 400 });
     out.dailyPrivacy = b.dailyPrivacy;

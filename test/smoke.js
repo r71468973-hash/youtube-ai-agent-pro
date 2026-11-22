@@ -89,6 +89,9 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     assert.strictEqual((await call('PUT', '/api/settings', { dailyPublishHour: 25 })).status, 400); ok('daily publish hour is validated');
     assert.strictEqual((await call('POST', '/api/videos', { story: 'x'.repeat(50), language: 'fr', format: 'shorts' })).status, 400); ok('bad language rejected');
 
+    // Rendering checks run with voice turned off (captions only). The voice itself is tested in voice-fallback.js;
+    // a voice failure in normal use stops the video instead of producing a silent one.
+    assert.strictEqual((await call('PUT', '/api/settings', { ttsProvider: 'none' })).status, 200);
     // --- English Short with music + captions
     const storyEn = 'Once upon a time, a small village sat beside a quiet river. Every morning a girl named Meera walked to the water. She listened to the birds. One day she found a glowing stone. It whispered a secret about the stars.';
     const a = await call('POST', '/api/videos', { story: storyEn, language: 'en', format: 'shorts', music: 'ambient-calm', captions: true });
@@ -106,7 +109,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const wantShort = process.env.RENDER_HD === '1' ? '1080x1920' : '720x1280';
     assert.strictEqual(`${vs.width}x${vs.height}`, wantShort); ok(`2D cartoon Short is ${wantShort} (9:16)`);
     assert(sa.some((s) => s.codec_type === 'audio')); ok('audio track present (music bed)');
-    assert(va.warnings.some((w) => /text-to-speech/.test(w))); ok('missing TTS key reported honestly');
+    assert(va.warnings.some((w) => /Voice is turned off/.test(w))); ok('voice off is reported honestly');
     assert(fs.existsSync(path.join(DATA, 'videos', va.id, 'thumb.jpg'))); ok('thumbnail created');
     // --- cloud storage: saved to the bucket, each file confirmed in the bucket
     assert.strictEqual(va.cloud && va.cloud.saved, true, 'not saved to cloud: ' + JSON.stringify(va.cloud)); ok('Short saved to cloud storage and confirmed');
@@ -143,7 +146,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
       execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "3.0", "-i", f3, "-frames:v", "1", p2]);
       assert(!fs.readFileSync(p1).equals(fs.readFileSync(p2))); ok("frames change over time (animated, not a still image)");
       assert(v3.soundEffects > 0, "footsteps were added"); ok("footsteps and sound effects added from the movement timeline");
-      assert(v3.warnings.some((w) => /text-to-speech/.test(w))); ok("missing voice reported honestly (no key here)");
+      assert(v3.warnings.some((w) => /Voice is turned off/.test(w))); ok("voice off is reported honestly");
       assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("thumbnail created");
     }
 

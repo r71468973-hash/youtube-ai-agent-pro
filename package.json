@@ -10,7 +10,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/animation.js && node test/cartoon-stage.js && node test/tts.js && node test/daily.js && node test/daily-publish.js && node test/render.js && node test/schedule.js && node test/storage.js && node test/media-rules.js && node test/youtube-api.js && node test/youtube-channel.js && node test/youtube-oauth.js && node test/youtube-diagnostics.js && node test/security.js && node test/key-tests.js && node test/storage-full.js && node test/daily-automation.js && node test/smoke.js"
+    "test": "node test/animation.js && node test/cartoon-stage.js && node test/tts.js && node test/daily.js && node test/daily-publish.js && node test/render.js && node test/schedule.js && node test/storage.js && node test/media-rules.js && node test/youtube-api.js && node test/youtube-channel.js && node test/youtube-oauth.js && node test/youtube-diagnostics.js && node test/security.js && node test/key-tests.js && node test/storage-full.js && node test/daily-automation.js && node test/voice-fallback.js && node test/smoke.js"
   },
   "dependencies": {}
 }
