@@ -281,7 +281,7 @@
       ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
       dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload,
       dailyHour: s.dailyHour ?? 4, dailyPublishHour: s.dailyPublishHour ?? 6, dailyPublishMinute: s.dailyPublishMinute ?? 30,
-      dailyPublic: !!s.dailyPublic, dailyPublicConsent: false,
+      dailyPublic: !!s.dailyPublic, dailyPublicConsent: false, dailyPrivacy: s.dailyPrivacy || 'private',
     };
     const consentGiven = !!s.dailyPublicConsentAt;
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
@@ -293,6 +293,7 @@
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyEnabled, onchange: (e) => { prefs.dailyEnabled = e.target.checked; } }), 'Make daily videos (morning and evening)'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyAutoUpload, onchange: (e) => { prefs.dailyAutoUpload = e.target.checked; } }), 'Upload each daily video to my YouTube channel'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.dailyPublic, onchange: (e) => { prefs.dailyPublic = e.target.checked; } }), 'Make each daily video public on YouTube at the publish time below (otherwise it stays PRIVATE)'),
+      h('label', {}, 'Visibility when not public', h('select', { onchange: (e) => { prefs.dailyPrivacy = e.target.value; } }, [['private', 'Private (only you can see it)'], ['unlisted', 'Unlisted (anyone with the link)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.dailyPrivacy }, l)))),
       h('p', { class: 'small muted' }, 'Publish time (India time, IST)'),
       h('div', { class: 'row' },
         h('input', { type: 'number', min: 0, max: 23, value: prefs.dailyPublishHour, 'aria-label': 'Publish hour', oninput: (e) => { prefs.dailyPublishHour = Number(e.target.value); } }),

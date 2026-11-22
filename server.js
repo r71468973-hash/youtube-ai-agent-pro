@@ -10,6 +10,7 @@ const storage = require('./lib/storage');
 const youtube = require('./lib/youtube');
 const pipeline = require('./lib/pipeline');
 const disk = require('./lib/disk');
+const render = require('./lib/render');
 const providers = require('./lib/providers');
 const animation = require('./lib/animation');
 const daily = require('./lib/daily');
@@ -214,6 +215,10 @@ function validateSettings(b) {
     if (!Number.isInteger(m) || m < 0 || m > 59) throw Object.assign(new Error('dailyPublishMinute must be from 0 to 59'), { code: 400 });
     out.dailyPublishMinute = m;
   }
+  if (b.dailyPrivacy !== undefined) {
+    if (!['private', 'unlisted'].includes(b.dailyPrivacy)) throw Object.assign(new Error('dailyPrivacy must be private or unlisted'), { code: 400 });
+    out.dailyPrivacy = b.dailyPrivacy;
+  }
   if (b.dailyPublic !== undefined) {
     if (typeof b.dailyPublic !== 'boolean') throw Object.assign(new Error('dailyPublic must be true or false'), { code: 400 });
     if (b.dailyPublic) {
@@ -290,6 +295,8 @@ async function approveAndUpload(id, meta) {
   try {
     const file = path.join(pipeline.videoDir(id), 'video.mp4');
     if (!fs.existsSync(file)) throw new Error('Video file is no longer on this server. Regenerate it.');
+    // Integrity: the MP4 must open and carry H.264 video, AAC audio and matching lengths before YouTube sees it.
+    await render.verifyMp4(file, { width: null, height: null });
     const r = await youtube.uploadVideo({
       file, title: meta.title, description: meta.description, tags: meta.tags, privacy: meta.privacy,
       isShort: v.format === 'shorts', publishAt: meta.publishAt || null,

@@ -30,6 +30,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     // 2. The consent gate: public only with the setting on AND a recorded consent.
     const now = new Date('2026-11-15T10:00:00Z');
     assert.deepStrictEqual(daily.dailyPublishPlan({ dailyPublic: false, dailyPublicConsentAt: '2026-11-01T00:00:00Z' }, now), { privacy: 'private', publishAt: null }); ok('public off means PRIVATE');
+    assert.deepStrictEqual(daily.dailyPublishPlan({ dailyPrivacy: 'unlisted', dailyPublic: false, dailyPublicConsentAt: null }, now), { privacy: 'unlisted', publishAt: null }); ok('daily visibility can be UNLISTED');
     assert.deepStrictEqual(daily.dailyPublishPlan({ dailyPublic: true, dailyPublicConsentAt: null }, now), { privacy: 'private', publishAt: null }); ok('public on without consent still means PRIVATE');
     const plan = daily.dailyPublishPlan({ dailyPublic: true, dailyPublicConsentAt: '2026-11-01T00:00:00Z', dailyPublishHour: 18, dailyPublishMinute: 30 }, now);
     assert.deepStrictEqual(plan, { privacy: 'public', publishAt: '2026-11-15T13:00:00.000Z' }); ok('public with consent is scheduled at the chosen India time');
