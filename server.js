@@ -137,8 +137,10 @@ function cleanText(s, max) {
 function createJob(input) {
   disk.assertRoom(pipeline.VIDEOS_DIR); // 507 with a clear message when the volume is full
   const id = newId(6);
-  const v = store.saveVideo({ id, ...input, status: 'queued', progress: 0, stage: 'Queued', createdAt: new Date().toISOString(), warnings: [], error: null, scenes: [] });
-  pipeline.enqueue(id);
+  // Paid Gemini videos wait for the owner's approval of the exact cost before they are queued.
+  const paid = store.getSettings().videoEngine === 'gemini-omni';
+  const v = store.saveVideo({ id, ...input, status: paid ? 'awaiting_approval' : 'queued', progress: 0, stage: paid ? 'Waiting for your approval of the paid cost' : 'Queued', createdAt: new Date().toISOString(), warnings: [], error: null, scenes: [] });
+  if (!paid) pipeline.enqueue(id);
   return v;
 }
 
@@ -214,6 +216,10 @@ function validateSettings(b) {
     const m = Number(b.dailyPublishMinute);
     if (!Number.isInteger(m) || m < 0 || m > 59) throw Object.assign(new Error('dailyPublishMinute must be from 0 to 59'), { code: 400 });
     out.dailyPublishMinute = m;
+  }
+  if (b.videoEngine !== undefined) {
+    if (!['local-2d', 'gemini-omni'].includes(b.videoEngine)) throw Object.assign(new Error('videoEngine must be local-2d or gemini-omni'), { code: 400 });
+    out.videoEngine = b.videoEngine;
   }
   // Owner turns OpenAI voice back on after topping up credits. The automatic switch-off stays until then.
   if (b.openaiTtsReenable === true) { out.openaiTtsDisabledAt = null; out.openaiTtsDisabledReason = null; }
@@ -567,6 +573,25 @@ async function handleApi(req, res, url) {
       }))
       .sort((a, b) => (a.publishAt || a.publishedAt || '9999').localeCompare(b.publishAt || b.publishedAt || '9999'));
     return json(res, 200, { items, now: new Date().toISOString() });
+  }
+  // Approval of a paid Gemini video: the owner approves the exact total (see lib/gemini-cartoon.js JOB_USD).
+  const gm = /^\/api\/videos\/([a-z0-9]+)\/gemini-approve$/.exec(p);
+  if (method === 'POST' && gm) {
+    const b = await readJson(req);
+    const v = store.getVideo(gm[1]);
+    if (!v) return bad(res, 'Video not found.', 404);
+    if (v.status !== 'awaiting_approval') return bad(res, 'This video is not waiting for approval.', 409);
+    const usd = Number(b.usd);
+    const { JOB_USD } = require('./lib/gemini-cartoon');
+    if (!Number.isFinite(usd) || Math.abs(usd - JOB_USD) > 0.005) {
+      return bad(res, `Approve exactly $${JOB_USD.toFixed(2)} for this video. The approved amount was not ${Number.isFinite(usd) ? '$' + usd.toFixed(2) : 'valid'}.`, 400);
+    }
+    v.geminiApprovedUsd = usd;
+    v.status = 'queued';
+    v.stage = 'Queued';
+    store.saveVideo(v);
+    pipeline.enqueue(v.id);
+    return json(res, 200, { ok: true, approvedUsd: usd });
   }
   if (method === 'POST' && p === '/api/videos') {
     const input = validateCreate(await readJson(req));
