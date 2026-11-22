@@ -163,7 +163,7 @@ function validateCreate(b) {
   };
 }
 
-const TTS_SETTINGS = ['auto', 'edge', 'piper', 'openai', 'elevenlabs', 'google', 'none'];
+const TTS_SETTINGS = ['auto', 'edge', 'piper', 'gemini', 'openai', 'elevenlabs', 'google', 'none'];
 function validateSettings(b) {
   const out = {};
   if (b.ttsProvider !== undefined) {
@@ -228,6 +228,12 @@ function validateSettings(b) {
   for (const k of ['elevenVoiceFemale', 'elevenVoiceMale']) {
     if (b[k] !== undefined) {
       if (!/^[A-Za-z0-9]{10,40}$/.test(b[k])) throw Object.assign(new Error('Invalid ElevenLabs voice id'), { code: 400 });
+      out[k] = b[k];
+    }
+  }
+  for (const k of ['geminiVoiceFemale', 'geminiVoiceMale']) {
+    if (b[k] !== undefined) {
+      if (!providers.GEMINI_VOICES.includes(b[k])) throw Object.assign(new Error('Invalid Gemini voice'), { code: 400 });
       out[k] = b[k];
     }
   }
@@ -406,6 +412,40 @@ async function handleApi(req, res, url) {
       try { usage = await cachedUsage(); } catch (e) { usageError = scrub(e.message).slice(0, 300); }
     }
     return json(res, 200, { ...st, usage, usageError });
+  }
+  /* Voice: list what is available, and make a short sample so the voice can be heard before a video is made. */
+  if (method === 'GET' && p === '/api/tts/voices') {
+    const language = 'en';
+    const edgeOk = providers.edgeStatus().ok;
+    const piperOk = providers.piperStatus().ok;
+    return json(res, 200, {
+      gemini: { voices: providers.GEMINI_VOICES, available: vault.has('GEMINI_API_KEY') },
+      edge: { available: edgeOk, reason: providers.edgeStatus().reason },
+      piper: { available: piperOk, reason: providers.piperStatus().reason, languages: ['hi'] },
+      openai: { available: vault.has('OPENAI_API_KEY') },
+      elevenlabs: { available: vault.has('ELEVENLABS_API_KEY') },
+      google: { available: vault.has('GOOGLE_TTS_API_KEY') },
+      current: store.getSettings().ttsProvider,
+      language,
+    });
+  }
+  if (method === 'POST' && p === '/api/tts/preview') {
+    const b = await readJson(req);
+    const language = b.language === 'hi' ? 'hi' : 'en';
+    const gender = b.gender === 'male' ? 'male' : 'female';
+    let provider = String(b.provider || '');
+    if (provider === 'auto') provider = providers.pickTtsProvider(language) || '';
+    if (!['edge', 'piper', 'gemini', 'openai', 'elevenlabs', 'google'].includes(provider)) {
+      return bad(res, `No voice is available for this preview. ${providers.voiceUnavailableReason(language)}`, 409);
+    }
+    if (provider === 'gemini' && b.voice !== undefined && !providers.GEMINI_VOICES.includes(b.voice)) return bad(res, 'Invalid Gemini voice', 400);
+    try {
+      const r = await providers.previewVoice({ provider, language, gender, voice: b.voice, text: typeof b.text === 'string' ? b.text.slice(0, 300) : undefined });
+      res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'no-store', ...SECURITY_HEADERS });
+      return res.end(r.audio);
+    } catch (e) {
+      return bad(res, `Voice preview failed: ${e.message}`, 502);
+    }
   }
   if (method === 'POST' && p === '/api/storage/test') {
     if (!storage.isConfigured()) return bad(res, `Cloud storage is not configured. Missing: ${storage.status().missing.join(', ')}`, 409);

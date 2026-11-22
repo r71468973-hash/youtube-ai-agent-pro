@@ -9,7 +9,7 @@ const { spawn, execFileSync } = require('child_process');
 const PORT = 3900 + Math.floor(Math.random() * 90);
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'aivideo-'));
 const BASE = `http://localhost:${PORT}`;
-const env = { ...process.env, QUALITY_GATE: 'off', PORT: String(PORT), DATA_DIR: DATA, ADMIN_PASSWORD: 'test-pass-123', BASE_URL: BASE, APP_SECRET: 'x'.repeat(32) };
+const env = { ...process.env, QUALITY_GATE: 'off', TTS_TEST_TONE: '1', PORT: String(PORT), DATA_DIR: DATA, ADMIN_PASSWORD: 'test-pass-123', BASE_URL: BASE, APP_SECRET: 'x'.repeat(32) };
 for (const k of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'ELEVENLABS_API_KEY', 'GOOGLE_TTS_API_KEY', 'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'R2_ENDPOINT']) delete env[k];
 
 let cookie = '';
@@ -106,7 +106,8 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
     const wantShort = process.env.RENDER_HD === '1' ? '1080x1920' : '720x1280';
     assert.strictEqual(`${vs.width}x${vs.height}`, wantShort); ok(`2D cartoon Short is ${wantShort} (9:16)`);
     assert(sa.some((s) => s.codec_type === 'audio')); ok('audio track present (music bed)');
-    assert(va.warnings.some((w) => /text-to-speech/.test(w))); ok('missing TTS key reported honestly');
+    assert.strictEqual(va.hasVoice, true, 'the narration must be in the video'); ok('narration track reported and included');
+    assert(probe(path.join(DATA, 'videos', va.id, 'video.mp4')).some((s) => s.codec_type === 'audio'), 'audio stream present'); ok('narration audio is in the final file');
     assert(fs.existsSync(path.join(DATA, 'videos', va.id, 'thumb.jpg'))); ok('thumbnail created');
     // --- cloud storage: saved to the bucket, each file confirmed in the bucket
     assert.strictEqual(va.cloud && va.cloud.saved, true, 'not saved to cloud: ' + JSON.stringify(va.cloud)); ok('Short saved to cloud storage and confirmed');
@@ -143,7 +144,7 @@ const ok = (name) => { passed++; console.log(`  ok  ${name}`); };
       execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "3.0", "-i", f3, "-frames:v", "1", p2]);
       assert(!fs.readFileSync(p1).equals(fs.readFileSync(p2))); ok("frames change over time (animated, not a still image)");
       assert(v3.soundEffects > 0, "footsteps were added"); ok("footsteps and sound effects added from the movement timeline");
-      assert(v3.warnings.some((w) => /text-to-speech/.test(w))); ok("missing voice reported honestly (no key here)");
+      assert.strictEqual(v3.hasVoice, true, 'the narration must be in the video'); ok('Hindi long video has narration');
       assert(fs.existsSync(path.join(DATA, "videos", v3.id, "thumb.jpg"))); ok("thumbnail created");
     }
 

@@ -3,6 +3,8 @@
 (() => {
   const $app = document.getElementById('app');
   const $toasts = document.getElementById('toasts');
+  const GEMINI_VOICE_LIST = ['Kore', 'Puck', 'Charon', 'Leda', 'Aoede', 'Fenrir', 'Sulafat', 'Achird', 'Gacrux', 'Vindemiatrix', 'Zephyr', 'Algieba'];
+const previewState = { language: 'en', gender: 'female' };
   const state = { csrf: null, overview: null, videos: [], view: 'create', keys: [], settings: null, form: null, timer: null };
 
   /* ---------------------------------------------------------------- helpers */
@@ -249,7 +251,7 @@
       h('button', { class: 'btn primary', type: 'submit' }, 'Save storage settings'));
 
     const prefs = {
-      ttsProvider: s.ttsProvider, imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
+      ttsProvider: s.ttsProvider, geminiVoiceFemale: s.geminiVoiceFemale || 'Kore', geminiVoiceMale: s.geminiVoiceMale || 'Puck', imageMode: s.imageMode, markSyntheticMedia: s.markSyntheticMedia,
       dailyEnabled: !!s.dailyEnabled, dailyAutoUpload: !!s.dailyAutoUpload,
       dailyHour: s.dailyHour ?? 4, dailyPublishHour: s.dailyPublishHour ?? 6, dailyPublishMinute: s.dailyPublishMinute ?? 30,
       dailyPublic: !!s.dailyPublic, dailyPublicConsent: false,
@@ -257,7 +259,21 @@
     const consentGiven = !!s.dailyPublicConsentAt;
     const prefCard = h('form', { class: 'card stack', onsubmit: async (e) => { e.preventDefault(); try { const r = await api('PUT', '/api/settings', prefs); state.settings = r.settings; await loadAll(); toast('Saved'); render(); } catch (ex) { toast(ex.message, 6000); } } },
       h('h3', {}, 'Generation'),
-      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS'], ['none', 'No voice (captions only)']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
+      h('label', {}, 'Voiceover provider', h('select', { onchange: (e) => { prefs.ttsProvider = e.target.value; } }, [['auto', 'Automatic (free voice first)'], ['edge', 'Free: Microsoft Edge neural (Hindi male default)'], ['piper', 'Free: Piper (offline Hindi)'], ['gemini', 'Google Gemini (uses your saved Gemini key)'], ['elevenlabs', 'ElevenLabs'], ['openai', 'OpenAI'], ['google', 'Google Cloud TTS']].map(([v, l]) => h('option', { value: v, selected: v === prefs.ttsProvider }, l)))),
+      h('div', { class: 'stack' },
+        h('label', {}, 'Gemini voice (female)', h('select', { onchange: (e) => { prefs.geminiVoiceFemale = e.target.value; } }, GEMINI_VOICE_LIST.map((v) => h('option', { value: v, selected: v === prefs.geminiVoiceFemale }, v)))),
+        h('label', {}, 'Gemini voice (male)', h('select', { onchange: (e) => { prefs.geminiVoiceMale = e.target.value; } }, GEMINI_VOICE_LIST.map((v) => h('option', { value: v, selected: v === prefs.geminiVoiceMale }, v)))),
+        h('label', {}, 'Preview language', h('select', { onchange: (e) => { previewState.language = e.target.value; } }, [['en', 'English'], ['hi', 'Hindi']].map(([v, l]) => h('option', { value: v, selected: previewState.language === v }, l)))),
+        h('label', {}, 'Preview voice', h('select', { onchange: (e) => { previewState.gender = e.target.value; } }, [['female', 'Female'], ['male', 'Male']].map(([v, l]) => h('option', { value: v, selected: previewState.gender === v }, l)))),
+        h('button', { class: 'btn', type: 'button', onclick: async () => {
+          const voice = previewState.gender === 'male' ? prefs.geminiVoiceMale : prefs.geminiVoiceFemale;
+          try {
+            const res = await fetch('/api/tts/preview', { method: 'POST', headers: { 'content-type': 'application/json', ...(state.csrf ? { 'x-csrf-token': state.csrf } : {}) }, credentials: 'same-origin', body: JSON.stringify({ provider: prefs.ttsProvider, language: previewState.language, gender: previewState.gender, voice }) });
+            if (!res.ok) { let msg = 'Voice preview failed.'; try { msg = (await res.json()).error || msg; } catch { /* not JSON */ } throw new Error(msg); }
+            const audio = new Audio(URL.createObjectURL(await res.blob()));
+            await audio.play();
+          } catch (ex) { toast(ex.message, 8000); }
+        } }, 'Preview voice')),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: prefs.markSyntheticMedia, onchange: (e) => { prefs.markSyntheticMedia = e.target.checked; } }), 'Label uploads as AI-generated on YouTube'),
       h('h3', {}, 'Daily video'),
       h('p', { class: 'small muted' }, `Twice a day, India time: a new original Hindi cartoon Short is made at ${String(prefs.dailyHour).padStart(2, '0')}:00 (morning, published ${String(prefs.dailyPublishHour).padStart(2, '0')}:${String(prefs.dailyPublishMinute).padStart(2, '0')}) and at ${String(prefs.dailyEveningHour ?? 16).padStart(2, '0')}:00 (evening, published ${String(prefs.dailyEveningPublishHour ?? 18).padStart(2, '0')}:${String(prefs.dailyPublishMinute).padStart(2, '0')}). Nothing is uploaded unless you turn on daily upload below.`),
