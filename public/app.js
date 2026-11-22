@@ -222,6 +222,7 @@
     const LABELS = {
       ANTHROPIC_API_KEY: ['Anthropic', 'Smarter scene planning'], OPENAI_API_KEY: ['OpenAI', 'Voiceover (TTS) and optional AI images'],
       ELEVENLABS_API_KEY: ['ElevenLabs', 'Voiceover (TTS)'], GOOGLE_TTS_API_KEY: ['Google Cloud TTS', 'Voiceover (TTS)'],
+      GEMINI_API_KEY: ['Google Gemini', 'AI video generation (Veo)'],
       YOUTUBE_CLIENT_ID: ['Google OAuth client ID', 'For YouTube'], YOUTUBE_CLIENT_SECRET: ['Google OAuth client secret', 'For YouTube'],
       S3_ACCESS_KEY_ID: ['Storage access key ID', 'Cloud storage'], S3_SECRET_ACCESS_KEY: ['Storage secret access key', 'Cloud storage'],
     };
